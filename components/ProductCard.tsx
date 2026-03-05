@@ -81,14 +81,16 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
 
                 <button
                   onClick={() => onEditCompetitor(comp)}
-                  className="text-xs font-semibold text-gray-500 hover:text-black transition-colors"
+                  className="mr-3 text-sm text-gray-500 hover:text-black transition-colors"
+                  aria-label="Edit competitor"
+                  title="Edit competitor"
                 >
-                  Edit
+                  ✏️
                 </button>
 
                 {comp.last_price !== null ? (
                   <div className="text-right shrink-0">
-                    <div className={`text-lg font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>{formatMoney(comp.last_price, normalizeCurrencyCode(productCurrency))}</div>
+                    <div className={`text-lg font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>{formatMoney(comp.last_price, normalizeCurrencyCode(comp.last_price_currency || productCurrency))}</div>
                     <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>{cheaper ? 'CHEAPER' : 'HIGHER'}</div>
                   </div>
                 ) : <span className="text-xs text-gray-400">Pending</span>}

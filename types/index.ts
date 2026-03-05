@@ -29,6 +29,7 @@ export interface CompetitorUrl {
   url: string
   label: string | null
   last_price: number | null
+  last_price_currency?: string | null
   last_checked_at: string | null
   last_changed_at: string | null
   is_active: boolean

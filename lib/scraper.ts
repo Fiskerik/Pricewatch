@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio'
-import { CurrencyCode, convertCurrency, normalizeCurrencyCode } from '@/lib/currency'
+import { CurrencyCode, normalizeCurrencyCode } from '@/lib/currency'
 
 const PRICE_SELECTORS = [
   'meta[property="product:price:amount"]',
@@ -85,17 +85,6 @@ function looksLikeNonProductPrice(raw: string): boolean {
   return NON_PRODUCT_PRICE_HINTS.some(token => lowered.includes(token))
 }
 
-async function maybeConvert(amount: number, sourceCurrency: CurrencyCode, targetCurrency: CurrencyCode): Promise<number> {
-  if (sourceCurrency === targetCurrency) return amount
-
-  try {
-    return await convertCurrency(amount, sourceCurrency, targetCurrency)
-  } catch (err) {
-    console.log('[scraper] currency conversion failed, using source amount', String(err))
-    return amount
-  }
-}
-
 async function extractPriceFromHtml(html: string, url: string, targetCurrency: CurrencyCode): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
   const $ = cheerio.load(html)
 
@@ -111,8 +100,8 @@ async function extractPriceFromHtml(html: string, url: string, targetCurrency: C
         if (!amount || Number.isNaN(amount)) continue
 
         const currency = (offer?.priceCurrency as CurrencyCode | undefined) ?? detectCurrency(rawJson, url)
-        const price = await maybeConvert(amount, currency, targetCurrency)
-        console.log(`[scraper] json-ld hit | scraped_currency=${currency} | target_currency=${targetCurrency} | amount=${amount} | converted=${price}`)
+        const price = amount
+        console.log(`[scraper] json-ld hit | scraped_currency=${currency} | target_currency=${targetCurrency} | amount=${amount}`)
         if (!isNaN(price) && price > 0) return { price, scrapedCurrency: currency }
       }
     } catch {
@@ -132,9 +121,9 @@ async function extractPriceFromHtml(html: string, url: string, targetCurrency: C
       if (!parsedAmount) continue
 
       const currency = detectCurrency(raw, url)
-      const price = await maybeConvert(parsedAmount, currency, targetCurrency)
+      const price = parsedAmount
 
-      console.log(`[scraper] selector hit ${selector} | raw="${raw.slice(0, 80)}" | scraped_currency=${currency} | target_currency=${targetCurrency} | converted=${price}`)
+      console.log(`[scraper] selector hit ${selector} | raw="${raw.slice(0, 80)}" | scraped_currency=${currency} | target_currency=${targetCurrency} | amount=${price}`)
       if (!isNaN(price) && price > 0 && price < 1000000) return { price, scrapedCurrency: currency }
     }
   }
@@ -145,8 +134,8 @@ async function extractPriceFromHtml(html: string, url: string, targetCurrency: C
     const amount = parsePriceText(match[0])
     if (!amount) return { price: null, scrapedCurrency: null }
     const currency = detectCurrency(match[0], url)
-    const price = await maybeConvert(amount, currency, targetCurrency)
-    console.log(`[scraper] regex fallback hit | raw="${match[0]}" | scraped_currency=${currency} | target_currency=${targetCurrency} | converted=${price}`)
+    const price = amount
+    console.log(`[scraper] regex fallback hit | raw="${match[0]}" | scraped_currency=${currency} | target_currency=${targetCurrency} | amount=${price}`)
     if (!isNaN(price) && price > 0) return { price, scrapedCurrency: currency }
   }
 

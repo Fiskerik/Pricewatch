@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { productId, url, label, initialPrice } = await req.json()
+  const { productId, url, label, initialPrice, initialCurrency } = await req.json()
   if (!productId || !url) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   // Verify ownership: product → store → user
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       url,
       label: label || null,
       last_price: initialPrice ?? null,
+      last_price_currency: initialCurrency ? String(initialCurrency).toUpperCase() : null,
       last_checked_at: initialPrice ? new Date().toISOString() : null,
     })
     .select()

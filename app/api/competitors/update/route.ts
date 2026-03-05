@@ -7,7 +7,7 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { competitorId, url, label } = await req.json()
+  const { competitorId, url, label, updatedPrice, updatedCurrency } = await req.json()
   if (!competitorId || !url) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
   }
@@ -23,9 +23,23 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+  const updatePayload: Record<string, unknown> = {
+    url,
+    label: label || null,
+  }
+
+  if (typeof updatedPrice === 'number' && Number.isFinite(updatedPrice)) {
+    updatePayload.last_price = updatedPrice
+    updatePayload.last_checked_at = new Date().toISOString()
+  }
+
+  if (typeof updatedCurrency === 'string' && updatedCurrency.trim()) {
+    updatePayload.last_price_currency = updatedCurrency.trim().toUpperCase()
+  }
+
   const { data: competitor, error } = await supabase
     .from('competitor_urls')
-    .update({ url, label: label || null })
+    .update(updatePayload)
     .eq('id', competitorId)
     .select()
     .single()

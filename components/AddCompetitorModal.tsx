@@ -28,6 +28,7 @@ export default function AddCompetitorModal({
   const [label, setLabel] = useState('')
   const [checking, setChecking] = useState(false)
   const [scrapedPrice, setScrapedPrice] = useState<number | null>(null)
+  const [scrapedCurrency, setScrapedCurrency] = useState<string | null>(null)
   const [confirmedPrice, setConfirmedPrice] = useState('')
   const [scrapeError, setScrapeError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -38,6 +39,7 @@ export default function AddCompetitorModal({
       setUrl(competitor.url)
       setLabel(competitor.label ?? '')
       setScrapedPrice(competitor.last_price)
+      setScrapedCurrency(productCurrency)
       setConfirmedPrice(competitor.last_price !== null ? competitor.last_price.toFixed(2) : '')
       setScrapeError(null)
       return
@@ -46,6 +48,7 @@ export default function AddCompetitorModal({
     setUrl('')
     setLabel('')
     setScrapedPrice(null)
+    setScrapedCurrency(null)
     setConfirmedPrice('')
     setScrapeError(null)
   }, [mode, competitor])
@@ -55,6 +58,7 @@ export default function AddCompetitorModal({
     setChecking(true)
     setScrapeError(null)
     setScrapedPrice(null)
+    setScrapedCurrency(null)
     setConfirmedPrice('')
 
     try {
@@ -66,6 +70,7 @@ export default function AddCompetitorModal({
       const data = await res.json()
       if (data.price) {
         setScrapedPrice(data.price)
+        setScrapedCurrency(data.scrapedCurrency || null)
         setConfirmedPrice(data.price.toFixed(2))
       } else {
         setScrapeError("Couldn't find a price on that page. Try a direct product URL.")
@@ -83,10 +88,17 @@ export default function AddCompetitorModal({
 
     try {
       if (mode === 'edit' && competitor) {
+        const updatedPrice = confirmedPrice ? parseFloat(confirmedPrice) : null
         const res = await fetch('/api/competitors/update', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ competitorId: competitor.id, url, label }),
+          body: JSON.stringify({
+            competitorId: competitor.id,
+            url,
+            label,
+            updatedPrice: Number.isFinite(updatedPrice) ? updatedPrice : null,
+            updatedCurrency: scrapedCurrency,
+          }),
         })
         const data = await res.json()
         if (data.competitor) {
@@ -100,7 +112,13 @@ export default function AddCompetitorModal({
       const res = await fetch('/api/competitors/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, url, label, initialPrice: Number.isFinite(initialPrice) ? initialPrice : null }),
+        body: JSON.stringify({
+          productId,
+          url,
+          label,
+          initialPrice: Number.isFinite(initialPrice) ? initialPrice : null,
+          initialCurrency: scrapedCurrency,
+        }),
       })
       const data = await res.json()
       if (data.competitor) {
@@ -192,7 +210,7 @@ export default function AddCompetitorModal({
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-green-700">✓ Price found</span>
-                <span className="text-lg font-extrabold text-gray-900">{formatMoney(scrapedPrice, normalizeCurrencyCode(productCurrency))}</span>
+                <span className="text-lg font-extrabold text-gray-900">{formatMoney(scrapedPrice, normalizeCurrencyCode(scrapedCurrency || productCurrency))}</span>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-700 block mb-1">Confirm price</label>
