@@ -1,0 +1,49 @@
+export type Plan = 'free' | 'pro' | 'business'
+
+export interface Store {
+  id: string
+  user_id: string
+  shop_domain: string | null
+  plan: Plan
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  created_at: string
+}
+
+export interface Product {
+  id: string
+  store_id: string
+  shopify_product_id: string | null
+  title: string
+  handle: string | null
+  image_url: string | null
+  our_price: number | null
+  created_at: string
+  competitor_urls?: CompetitorUrl[]
+}
+
+export interface CompetitorUrl {
+  id: string
+  product_id: string
+  url: string
+  label: string | null
+  last_price: number | null
+  last_checked_at: string | null
+  last_changed_at: string | null
+  is_active: boolean
+  created_at: string
+  price_history?: PriceHistory[]
+}
+
+export interface PriceHistory {
+  id: string
+  competitor_url_id: string
+  price: number
+  checked_at: string
+}
+
+export const PLAN_LIMITS: Record<Plan, { products: number; competitors: number; checkFrequency: 'hourly' | 'daily' }> = {
+  free:     { products: 3,         competitors: 2,  checkFrequency: 'daily' },
+  pro:      { products: 50,        competitors: 10, checkFrequency: 'hourly' },
+  business: { products: Infinity,  competitors: Infinity, checkFrequency: 'hourly' },
+}
