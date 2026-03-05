@@ -31,6 +31,8 @@ export async function GET(req: NextRequest) {
     `redirect_uri=${encodeURIComponent(redirectUri)}&` +
     `state=${state}`
   )
+  console.log('[Shopify Auth] appUrl:', appUrl)
+  console.log('[Shopify Auth] redirectUri:', redirectUri)
   
   response.cookies.set('shopify_oauth_state', state, {
     httpOnly: true,
