@@ -298,8 +298,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     onCurrencyUpdated={handleProductCurrencyUpdated}
                     competitorLimit={limits.competitors}
                     showVat={showVat}
-                    vatRate={vatRate}
-                    vatCountryCode={vatCountryCode}
                     fetchingIds={fetchingIds}
                     pendingPrices={pendingPrices}
                     onConfirmPrice={handleConfirmPrice}

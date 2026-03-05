@@ -5,9 +5,9 @@ export const metadata: Metadata = {
   title: 'PriceWatch — Competitor Price Tracking for Shopify',
   description: 'Paste a competitor URL. We watch it. You get an alert when prices change. Starting free.',
   icons: {
-    icon: '/logo.jpg',
-    shortcut: '/logo.jpg',
-    apple: '/logo.jpg',
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
   },
   verification: {
     google: 'a7ooX99wNHGQkLtrXE6yZp6A_dw1L1lpWOvVXN-DUgI',
