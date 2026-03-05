@@ -102,7 +102,13 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-gray-100 py-8 px-6 text-center text-sm text-gray-400">
-        © {new Date().getFullYear()} PriceWatch · Built for Shopify sellers
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <span>© {new Date().getFullYear()} PriceWatch · Built for Shopify sellers</span>
+          <span aria-hidden="true">·</span>
+          <Link href="/privacy" className="hover:text-gray-700 transition-colors">Privacy policy</Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/terms" className="hover:text-gray-700 transition-colors">Terms of conditions</Link>
+        </div>
       </footer>
     </div>
   )
