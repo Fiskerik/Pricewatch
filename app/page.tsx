@@ -68,7 +68,7 @@ export default function LandingPage() {
           {[
             {
               name: 'Free', price: '$0', period: 'forever',
-              features: ['3 products', '2 competitors each', 'Daily price checks', 'Email alerts'],
+              features: ['10 products', '3 competitors each', 'Daily price checks', 'Email alerts'],
               cta: 'Get started', href: '/signup', highlight: false,
             },
             {

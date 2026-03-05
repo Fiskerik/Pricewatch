@@ -1,10 +1,10 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Product, CompetitorUrl, PriceHistory } from '@/types'
 import { formatMoney, SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/currency'
-import { applyVat, detectUserCountryCode, getVatRateForCountry } from '@/lib/vat'
+import { applyVat, removeVat } from '@/lib/vat'
 
-interface PendingPrice { price: number; currency: string }
+interface PendingPrice { price: number; currency: string; includesVat: boolean }
 interface ConvertedCurrencyResponse {
   product?: { id: string; currency_code: string; our_price: number | null }
   competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
@@ -20,8 +20,11 @@ interface Props {
   onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
   competitorLimit: number
   showVat: boolean
+  vatRate: number
+  competitorVatIncluded: Record<string, boolean>
   fetchingIds: Record<string, boolean>
   pendingPrices: Record<string, PendingPrice>
+  onPendingVatIncludedChange: (competitorId: string, includesVat: boolean) => void
   onConfirmPrice: (competitorId: string, includesVat: boolean) => void
   onRejectPrice: (competitorId: string) => void
 }
@@ -100,13 +103,11 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 
 export default function ProductCard({
   product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor,
-  onCurrencyUpdated, competitorLimit, showVat,
-  fetchingIds, pendingPrices, onConfirmPrice, onRejectPrice,
+  onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
+  fetchingIds, pendingPrices, onPendingVatIncludedChange, onConfirmPrice, onRejectPrice,
 }: Props) {
   const competitors = product.competitor_urls ?? []
-  const [userCountryCode, setUserCountryCode] = useState<string | null>(null)
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
-  const [pendingVatIncluded, setPendingVatIncluded] = useState<Record<string, boolean>>({})
 
   const hasChanges = competitors.some(c => {
     if (!c.last_changed_at) return false
@@ -115,10 +116,7 @@ export default function ProductCard({
   const hasFetching = competitors.some(c => fetchingIds[c.id])
   const atLimit = competitorLimit !== Infinity && competitors.length >= competitorLimit
   const productCurrency = product.currency_code ?? 'USD'
-  const vatRate = useMemo(() => getVatRateForCountry(userCountryCode), [userCountryCode])
   const ourPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
-
-  useEffect(() => { setUserCountryCode(detectUserCountryCode()) }, [])
 
   const handleCurrencyChange = async (currencyCode: string) => {
     const res = await fetch('/api/products/currency', {
@@ -142,7 +140,7 @@ export default function ProductCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm truncate">{product.title}</div>
-          <div className="text-xs text-gray-400 mt-0.5">
+          <div className="text-base text-gray-500 mt-0.5 leading-tight">
             {ourPrice ? `Your price: ${formatMoney(ourPrice, normalizeCurrencyCode(productCurrency))} · ` : ''}
             {competitors.length} competitor{competitors.length !== 1 ? 's' : ''} tracked
           </div>
@@ -190,7 +188,10 @@ export default function ProductCard({
             const isFetching = !!fetchingIds[comp.id]
             const pending = pendingPrices[comp.id]
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
-            const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, showVat ? vatRate : 0) : null
+            const includesVat = competitorVatIncluded[comp.id] ?? comp.vat_included ?? true
+            const priceWithVat = comp.last_price !== null
+              ? (showVat ? (includesVat ? comp.last_price : applyVat(comp.last_price, vatRate)) : (includesVat ? removeVat(comp.last_price, vatRate) : comp.last_price))
+              : null
             const cheaper = priceWithVat !== null && ourPrice !== null && priceWithVat < ourPrice
             const historyPoints = comp.price_history ?? []
             const showHistory = !!expandedHistory[comp.id]
@@ -248,8 +249,8 @@ export default function ProductCard({
                         <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
                           {cheaper ? 'CHEAPER' : 'HIGHER'}
                         </div>
-                        {showVat && vatRate > 0 && userCountryCode && (
-                          <div className="text-[10px] text-gray-400">incl. {vatRate}% VAT</div>
+                        {vatRate > 0 && (
+                          <div className="text-[10px] text-gray-400">{showVat ? `incl. ${vatRate}% VAT` : `excl. ${vatRate}% VAT`}</div>
                         )}
                       </div>
                     ) : (
@@ -272,26 +273,26 @@ export default function ProductCard({
                       <div className="text-xs font-semibold text-amber-700 mb-0.5">✓ Price fetched — does this look right?</div>
                       <div className="text-lg font-extrabold text-gray-900">
                         {formatMoney(
-                          pendingVatIncluded[comp.id] ? pending.price : applyVat(pending.price, vatRate),
+                          showVat
+                            ? (pending.includesVat ? pending.price : applyVat(pending.price, vatRate))
+                            : (pending.includesVat ? removeVat(pending.price, vatRate) : pending.price),
                           normalizeCurrencyCode(pending.currency),
                         )}
                         {vatRate > 0 && (
                           <span className="text-xs font-normal text-gray-400 ml-1">
-                            {pendingVatIncluded[comp.id] ? 'incl. VAT' : `VAT added (${vatRate}%)`}
+                            {pending.includesVat ? 'includes VAT' : 'excludes VAT'}
                           </span>
                         )}
                       </div>
-                      {vatRate > 0 && (
-                        <label className="inline-flex items-center gap-2 mt-2 text-xs text-gray-700">
+                      <label className="inline-flex items-center gap-2 mt-2 text-xs text-gray-700">
                           <input
                             type="checkbox"
-                            checked={!!pendingVatIncluded[comp.id]}
-                            onChange={(e) => setPendingVatIncluded(prev => ({ ...prev, [comp.id]: e.target.checked }))}
+                            checked={pending.includesVat}
+                            onChange={(e) => onPendingVatIncludedChange(comp.id, e.target.checked)}
                             className="rounded border-gray-300"
                           />
                           VAT included in fetched price
                         </label>
-                      )}
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
@@ -301,7 +302,7 @@ export default function ProductCard({
                         ✕ Wrong
                       </button>
                       <button
-                        onClick={() => onConfirmPrice(comp.id, !!pendingVatIncluded[comp.id])}
+                        onClick={() => onConfirmPrice(comp.id, pending.includesVat)}
                         className="text-xs font-semibold text-white bg-black px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
                       >
                         ✓ Correct
