@@ -97,10 +97,11 @@ async function extractFromHtml(
 ): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
 
   // ── 1. JSON-LD (best for compliant sites) ────────────────
-  const jsonLdMatches = html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)
-  for (const match of jsonLdMatches) {
+  const jsonLdRe = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
+  let jsonLdMatch: RegExpExecArray | null
+  while ((jsonLdMatch = jsonLdRe.exec(html)) !== null) {
     try {
-      const parsed = JSON.parse(match[1])
+      const parsed = JSON.parse(jsonLdMatch[1])
       const candidates = Array.isArray(parsed) ? parsed : [parsed]
       for (const item of candidates) {
         const offerRaw = item?.offers
