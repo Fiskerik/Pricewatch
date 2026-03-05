@@ -342,6 +342,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     product={product}
                     isExpanded={expandedProduct === product.id}
                     onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
+                    onEditProduct={() => {}}
                     onAddCompetitor={() => setAddCompetitorFor(product.id)}
                     onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                     onRefreshCompetitor={triggerBackgroundFetch}
