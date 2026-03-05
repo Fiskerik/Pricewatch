@@ -29,9 +29,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [showVat, setShowVat] = useState(true)
 
-  // Background fetch tracking
-  const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set())
-  const [pendingPrices, setPendingPrices] = useState<Map<string, PendingPrice>>(new Map())
+  // Plain objects avoid TS Set/Map downlevelIteration errors
+  const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
+  const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
 
   useEffect(() => {
     const stored = window.localStorage.getItem('pricewatch:showVat')
@@ -56,9 +56,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     }).length ?? 0), 0
   )
 
-  // Background price fetch — called after a competitor is added
   const triggerBackgroundFetch = (competitorId: string) => {
-    setFetchingIds(prev => new Set([...prev, competitorId]))
+    setFetchingIds(prev => ({ ...prev, [competitorId]: true }))
 
     fetch('/api/competitors/fetch', {
       method: 'POST',
@@ -68,21 +67,16 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       .then(async res => {
         if (!res.ok) return
         const data = await res.json()
-        if (data.competitor?.last_price !== null && data.competitor?.last_price !== undefined) {
-          // Price found — show confirmation UI
-          setPendingPrices(prev => {
-            const next = new Map(prev)
-            next.set(competitorId, {
-              price: data.competitor.last_price,
-              currency: data.competitor.last_price_currency ?? 'USD',
-            })
-            return next
-          })
-          // Also update the competitor in products list with the fetched data
+        const comp = data.competitor
+        if (comp && comp.last_price !== null && comp.last_price !== undefined) {
+          setPendingPrices(prev => ({
+            ...prev,
+            [competitorId]: { price: comp.last_price, currency: comp.last_price_currency ?? 'USD' },
+          }))
           setProducts(prev => prev.map(p => ({
             ...p,
             competitor_urls: (p.competitor_urls ?? []).map(c =>
-              c.id === competitorId ? { ...c, ...data.competitor } : c
+              c.id === competitorId ? { ...c, ...comp } : c
             ),
           })))
         }
@@ -90,41 +84,39 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       .catch(() => {})
       .finally(() => {
         setFetchingIds(prev => {
-          const next = new Set(prev)
-          next.delete(competitorId)
+          const next = { ...prev }
+          delete next[competitorId]
           return next
         })
       })
   }
 
   const handleConfirmPrice = (competitorId: string) => {
-    // Price is already saved in DB by the fetch endpoint — just dismiss the banner
     setPendingPrices(prev => {
-      const next = new Map(prev)
-      next.delete(competitorId)
+      const next = { ...prev }
+      delete next[competitorId]
       return next
     })
   }
 
-  const handleRejectPrice = async (competitorId: string, productId: string) => {
-    // User rejects the auto-fetched price — clear it in DB
+  const handleRejectPrice = async (competitorId: string) => {
     setPendingPrices(prev => {
-      const next = new Map(prev)
-      next.delete(competitorId)
+      const next = { ...prev }
+      delete next[competitorId]
       return next
     })
-    // Optimistically clear the price in UI
     setProducts(prev => prev.map(p => ({
       ...p,
       competitor_urls: (p.competitor_urls ?? []).map(c =>
         c.id === competitorId ? { ...c, last_price: null, last_checked_at: null } : c
       ),
     })))
-    // Clear in DB via update endpoint
+    const comp = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === competitorId)
+    if (!comp) return
     await fetch('/api/competitors/update', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ competitorId, url: products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === competitorId)?.url ?? '', updatedPrice: null }),
+      body: JSON.stringify({ competitorId, url: comp.url, updatedPrice: null }),
     }).catch(() => {})
   }
 
@@ -134,39 +126,33 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   const handleCompetitorAdded = (productId: string, competitor: CompetitorUrl) => {
-    // Add to product list immediately
-    setProducts(prev => prev.map(p => {
-      if (p.id !== productId) return p
-      return { ...p, competitor_urls: [...(p.competitor_urls ?? []), competitor] }
-    }))
+    setProducts(prev => prev.map(p =>
+      p.id !== productId ? p : { ...p, competitor_urls: [...(p.competitor_urls ?? []), competitor] }
+    ))
     setAddCompetitorFor(null)
-    // Auto-expand the product so user sees the loading state
     setExpandedProduct(productId)
-    // Trigger background price fetch
     triggerBackgroundFetch(competitor.id)
   }
 
   const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
-    setProducts(prev => prev.map(p => {
-      if (p.id !== productId) return p
-      return {
+    setProducts(prev => prev.map(p =>
+      p.id !== productId ? p : {
         ...p,
         competitor_urls: (p.competitor_urls ?? []).map(c => c.id === competitor.id ? competitor : c),
       }
-    }))
+    ))
   }
 
   const handleCompetitorDeleted = (productId: string, competitorId: string) => {
-    setProducts(prev => prev.map(p => {
-      if (p.id !== productId) return p
-      return {
+    setProducts(prev => prev.map(p =>
+      p.id !== productId ? p : {
         ...p,
         competitor_urls: (p.competitor_urls ?? []).filter(c => c.id !== competitorId),
       }
-    }))
+    ))
     setEditingCompetitor(null)
-    setPendingPrices(prev => { const n = new Map(prev); n.delete(competitorId); return n })
-    setFetchingIds(prev => { const n = new Set(prev); n.delete(competitorId); return n })
+    setPendingPrices(prev => { const n = { ...prev }; delete n[competitorId]; return n })
+    setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n })
   }
 
   const handleProductCurrencyUpdated = (productId: string, currencyCode: string) => {
@@ -178,7 +164,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
       <main className="flex-1 p-8 overflow-y-auto max-h-screen">
-        {/* Header */}
         <div className="flex justify-between items-start mb-7">
           <div>
             <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
@@ -187,7 +172,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 font-semibold">
+            <label className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 font-semibold cursor-pointer">
               <span>VAT on prices</span>
               <button
                 type="button"
@@ -208,7 +193,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           </div>
         </div>
 
-        {/* Stat Cards */}
         <div className="grid grid-cols-3 gap-4 mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
@@ -219,7 +203,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               <div className="flex justify-between items-start">
                 <div>
                   <div className="text-xs text-gray-400 font-medium mb-1.5">{stat.label}</div>
-                  <div className={`text-3xl font-extrabold ${stat.highlight ? 'text-red-500' : 'text-gray-900'}`}>{stat.value}</div>
+                  <div className={`text-3xl font-extrabold ${'highlight' in stat && stat.highlight ? 'text-red-500' : 'text-gray-900'}`}>{stat.value}</div>
                   <div className="text-xs text-gray-400 mt-1">{stat.sub}</div>
                 </div>
                 <span className="text-2xl">{stat.icon}</span>
@@ -228,7 +212,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           ))}
         </div>
 
-        {/* Recent Alerts */}
         {alerts.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
             <h2 className="font-bold text-sm mb-4">Recent Alerts</h2>
@@ -240,7 +223,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           </div>
         )}
 
-        {/* Products */}
         <h2 className="font-bold text-sm mb-3">Your Products</h2>
 
         {products.length === 0 ? (
@@ -268,7 +250,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 fetchingIds={fetchingIds}
                 pendingPrices={pendingPrices}
                 onConfirmPrice={handleConfirmPrice}
-                onRejectPrice={(competitorId) => handleRejectPrice(competitorId, product.id)}
+                onRejectPrice={handleRejectPrice}
               />
             ))}
           </div>
@@ -284,7 +266,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         )}
       </main>
 
-      {/* Modals */}
       {addCompetitorFor && (
         <AddCompetitorModal
           productId={addCompetitorFor}
