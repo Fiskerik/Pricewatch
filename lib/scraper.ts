@@ -96,6 +96,49 @@ async function extractFromHtml(
   url: string,
 ): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
 
+
+  // ── 0. Etsy: price range in JSON-LD (variants show lowPrice) ────
+  const etsyHostCheck = (() => { try { return new URL(url).hostname.includes('etsy.com') } catch { return false } })()
+  if (etsyHostCheck) {
+    const jsonLdReEtsy = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
+    let m: RegExpExecArray | null
+    while ((m = jsonLdReEtsy.exec(html)) !== null) {
+      try {
+        const parsed = JSON.parse(m[1])
+        const items = Array.isArray(parsed) ? parsed : [parsed]
+        for (const item of items) {
+          // Product with offers
+          const offers = item?.offers
+          if (offers) {
+            // AggregateOffer has lowPrice
+            const low = offers.lowPrice ?? offers.price
+            if (low != null) {
+              const amount = parseFloat(String(low))
+              if (!isNaN(amount) && amount > 0) {
+                return { price: amount, scrapedCurrency: offers.priceCurrency ?? offers.lowPriceCurrency ?? detectCurrency('', url) }
+              }
+            }
+            // Array of offers — pick min
+            if (Array.isArray(offers)) {
+              const prices = offers.map((o: any) => parseFloat(String(o.price))).filter(n => !isNaN(n) && n > 0)
+              if (prices.length) {
+                return { price: Math.min(...prices), scrapedCurrency: offers[0]?.priceCurrency ?? detectCurrency('', url) }
+              }
+            }
+          }
+        }
+      } catch { /* malformed */ }
+    }
+    // Etsy also embeds price in a data tag
+    const etsyPriceMatch = html.match(/"price":\s*"?([\d.]+)"?/)
+    if (etsyPriceMatch) {
+      const amount = parseFloat(etsyPriceMatch[1])
+      if (!isNaN(amount) && amount > 0) {
+        return { price: amount, scrapedCurrency: detectCurrency('', url) }
+      }
+    }
+  }
+
   // ── 1. JSON-LD (best for compliant sites) ────────────────
   const jsonLdRe = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
   let jsonLdMatch: RegExpExecArray | null
@@ -281,6 +324,39 @@ async function renderJs(url: string): Promise<string> {
   throw new Error(`All JS rendering providers failed. Last error: ${lastError}`)
 }
 
+
+// ─── URL normalisation ────────────────────────────────────────────────────────
+
+/**
+ * Clean tracking junk from URLs before storing/scraping.
+ * Etsy: keep only the listing path, drop all query params.
+ * Generic: strip common tracking params (utm_*, ref, fbclid …).
+ */
+export function cleanUrl(rawUrl: string): string {
+  let url: URL
+  try { url = new URL(rawUrl.trim()) } catch { return rawUrl.trim() }
+
+  const host = url.hostname.replace(/^www\./, '')
+
+  // Etsy — canonical form is /listing/<id>/<slug>, no query needed
+  if (host === 'etsy.com' || host.endsWith('.etsy.com')) {
+    const m = url.pathname.match(/\/listing\/\d+\/[^/]+/)
+    if (m) return `https://www.etsy.com${m[0]}`
+    // fallback: just drop all params
+    return `https://www.etsy.com${url.pathname}`
+  }
+
+  // Generic: strip known tracking-only params
+  const TRACKING_PARAMS = [
+    'utm_source','utm_medium','utm_campaign','utm_term','utm_content',
+    'ref','external','cns','sts','content_source','logging_key','ls',
+    'fbclid','gclid','msclkid','mc_cid','mc_eid','_ga','_gl',
+  ]
+  for (const p of TRACKING_PARAMS) url.searchParams.delete(p)
+  url.hash = ''
+  return url.toString()
+}
+
 // ─── Domain helpers ───────────────────────────────────────────────────────────
 
 function getDomain(url: string): string {
@@ -295,6 +371,7 @@ const JS_RENDERED_DOMAINS = new Set([
   'webhallen.com',
   'inet.se',
   'onoff.se',
+  'etsy.com',
 ])
 
 /** Sites with Cloudflare — direct fetch works but needs realistic headers */
