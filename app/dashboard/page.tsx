@@ -8,12 +8,21 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Fetch store
-  const { data: store } = await supabase
+  // Fetch store — create it if it doesn't exist yet
+  let { data: store } = await supabase
     .from('stores')
     .select('*')
     .eq('user_id', user.id)
     .single()
+
+  if (!store) {
+    const { data: newStore } = await supabase
+      .from('stores')
+      .insert({ user_id: user.id })
+      .select()
+      .single()
+    store = newStore
+  }
 
   // Fetch products with their competitor URLs and latest price history
   const { data: products } = await supabase
