@@ -177,10 +177,10 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-gray-900 lg:items-stretch" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div className="flex min-h-screen bg-gray-50 text-gray-900 lg:items-stretch overflow-x-hidden" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto lg:max-h-screen">
+      <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto lg:max-h-screen">
 
         {/* Header */}
         <div className="flex flex-col gap-4 sm:gap-5 lg:flex-row lg:justify-between lg:items-start mb-7">

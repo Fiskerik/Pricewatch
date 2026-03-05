@@ -6,29 +6,29 @@ export default function LandingPage() {
     <div className="min-h-screen bg-white text-gray-900">
 
       {/* Nav */}
-      <nav className="flex justify-between items-center px-8 py-5 border-b border-gray-100 max-w-6xl mx-auto">
-        <div className="flex items-center gap-2">
+      <nav className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-3 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 border-b border-gray-100 max-w-6xl mx-auto">
+        <div className="flex items-center gap-2 shrink-0">
           <Image src="/logo.png" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
           <span className="font-bold text-base">PriceWatch</span>
         </div>
-        <div className="flex items-center gap-6">
-          <a href="#pricing" className="text-sm text-gray-500 hover:text-gray-900 transition-colors">Pricing</a>
-          <Link href="/login" className="text-sm text-gray-500 hover:text-gray-900 transition-colors">Log in</Link>
-          <Link href="/signup" className="bg-black text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">
+        <div className="flex items-center justify-end gap-2 sm:gap-4 w-full sm:w-auto">
+          <a href="#pricing" className="text-sm text-gray-500 hover:text-gray-900 transition-colors px-2 py-1">Pricing</a>
+          <Link href="/login" className="text-sm text-gray-500 hover:text-gray-900 transition-colors px-2 py-1">Log in</Link>
+          <Link href="/signup" className="bg-black text-white text-sm font-semibold px-3 sm:px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors whitespace-nowrap">
             Get started free
           </Link>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="max-w-3xl mx-auto text-center px-6 pt-24 pb-20">
+      <section className="max-w-3xl mx-auto text-center px-5 sm:px-6 pt-14 sm:pt-20 lg:pt-24 pb-16 sm:pb-20">
         <div className="inline-block bg-gray-100 text-gray-600 text-xs font-semibold px-3 py-1.5 rounded-full mb-8 tracking-wide">
           BUILT FOR SHOPIFY SELLERS
         </div>
-        <h1 className="text-5xl md:text-6xl font-extrabold leading-[1.08] tracking-tight mb-6">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-[1.08] tracking-tight mb-6">
           Stop checking competitor<br />prices manually
         </h1>
-        <p className="text-xl text-gray-500 leading-relaxed mb-10 max-w-xl mx-auto">
+        <p className="text-lg sm:text-xl text-gray-500 leading-relaxed mb-10 max-w-xl mx-auto">
           Paste a competitor URL. We watch it. You get an email the moment their price changes.
         </p>
         <div className="flex gap-3 justify-center flex-wrap">

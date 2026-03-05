@@ -12,6 +12,7 @@
   body {
     @apply text-gray-900 bg-white;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
 
   input, button {

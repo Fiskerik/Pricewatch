@@ -130,7 +130,11 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
 
       {mobileOpen && <button type="button" className="lg:hidden fixed inset-0 bg-black/35 z-40" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
 
-      <aside className={`fixed top-0 left-0 z-50 h-full w-72 max-w-[85vw] bg-white border-r border-gray-100 flex flex-col py-5 shrink-0 transform transition-transform duration-200 lg:static lg:w-56 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`lg:hidden fixed top-0 left-0 z-50 h-full w-72 max-w-[85vw] bg-white border-r border-gray-100 flex flex-col py-5 shrink-0 transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-[105%]'}`}>
+        {SidebarContent}
+      </aside>
+
+      <aside className="hidden lg:flex lg:sticky lg:top-0 lg:h-screen lg:w-56 bg-white border-r border-gray-100 flex-col py-5 shrink-0">
         {SidebarContent}
       </aside>
     </>
