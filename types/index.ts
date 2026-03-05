@@ -43,7 +43,7 @@ export interface PriceHistory {
 }
 
 export const PLAN_LIMITS: Record<Plan, { products: number; competitors: number; checkFrequency: 'hourly' | 'daily' }> = {
-  free:     { products: 3,         competitors: 2,  checkFrequency: 'daily' },
-  pro:      { products: 50,        competitors: 10, checkFrequency: 'hourly' },
-  business: { products: Infinity,  competitors: Infinity, checkFrequency: 'hourly' },
+  free:     { products: 3,         competitors: 2,   checkFrequency: 'daily' },
+  pro:      { products: 50,        competitors: 10,  checkFrequency: 'daily' },  
+  business: { products: Infinity,  competitors: Infinity, checkFrequency: 'daily' }, 
 }
