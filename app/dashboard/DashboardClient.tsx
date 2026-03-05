@@ -45,6 +45,18 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setAddCompetitorFor(null)
   }
 
+  const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id !== productId) return p
+      return {
+        ...p,
+        competitor_urls: (p.competitor_urls ?? []).map(existing =>
+          existing.id === competitor.id ? competitor : existing
+        ),
+      }
+    }))
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
@@ -143,6 +155,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           productId={addCompetitorFor}
           onClose={() => setAddCompetitorFor(null)}
           onAdded={(comp) => handleCompetitorAdded(addCompetitorFor, comp)}
+          onUpdated={(comp) => handleCompetitorUpdated(addCompetitorFor, comp)}
         />
       )}
       {showAddProduct && (

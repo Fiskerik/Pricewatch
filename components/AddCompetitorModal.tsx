@@ -6,9 +6,10 @@ interface Props {
   productId: string
   onClose: () => void
   onAdded: (competitor: CompetitorUrl) => void
+  onUpdated: (competitor: CompetitorUrl) => void
 }
 
-export default function AddCompetitorModal({ productId, onClose, onAdded }: Props) {
+export default function AddCompetitorModal({ productId, onClose, onAdded, onUpdated }: Props) {
   const [url, setUrl] = useState('')
   const [label, setLabel] = useState('')
   const [checking, setChecking] = useState(false)
@@ -42,18 +43,37 @@ export default function AddCompetitorModal({ productId, onClose, onAdded }: Prop
   }
 
   const handleSave = async () => {
-    if (!scrapedPrice) return
+    if (!url) return
     setSaving(true)
 
     try {
       const res = await fetch('/api/competitors/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, url, label, initialPrice: scrapedPrice }),
+        body: JSON.stringify({ productId, url, label }),
       })
       const data = await res.json()
       if (data.competitor) {
         onAdded(data.competitor)
+        onClose()
+
+        // Background fetch: keep UI fast while price updates asynchronously.
+        fetch('/api/competitors/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ competitorId: data.competitor.id }),
+        })
+          .then(async fetchRes => {
+            if (!fetchRes.ok) return null
+            const fetchData = await fetchRes.json()
+            if (fetchData.competitor) {
+              onUpdated(fetchData.competitor)
+            }
+            return null
+          })
+          .catch(() => {
+            // Silent by design: fallback is regular cron checks.
+          })
       }
     } finally {
       setSaving(false)
@@ -66,7 +86,7 @@ export default function AddCompetitorModal({ productId, onClose, onAdded }: Prop
         {/* Header */}
         <div className="px-7 pt-7 pb-5 border-b border-gray-100">
           <h2 className="font-extrabold text-lg">Add Competitor URL</h2>
-          <p className="text-sm text-gray-500 mt-1">Paste any product page. We'll find the price.</p>
+          <p className="text-sm text-gray-500 mt-1">Save now. Price fetching continues in the background.</p>
         </div>
 
         <div className="px-7 py-5 space-y-4">
@@ -95,7 +115,7 @@ export default function AddCompetitorModal({ productId, onClose, onAdded }: Prop
           {/* Label Input */}
           <div>
             <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
-              Label (optional)
+              Description (optional)
             </label>
             <input
               value={label}
@@ -136,7 +156,7 @@ export default function AddCompetitorModal({ productId, onClose, onAdded }: Prop
           </button>
           <button
             onClick={handleSave}
-            disabled={!scrapedPrice || saving}
+            disabled={!url || saving}
             className="flex-2 flex-1 bg-black text-white font-bold text-sm py-2.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : 'Start Watching'}
