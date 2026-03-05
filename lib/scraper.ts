@@ -1,9 +1,11 @@
 import * as cheerio from 'cheerio'
 import { CurrencyCode, convertCurrency, normalizeCurrencyCode } from '@/lib/currency'
 
-// ── Price selectors — covers ~80% of Shopify stores ────────
 const PRICE_SELECTORS = [
+  'meta[property="product:price:amount"]',
+  '[itemprop="price"]',
   '[data-product-price]',
+  '[data-price]',
   '.product__price',
   '.price__regular',
   '.price-item--regular',
@@ -11,9 +13,6 @@ const PRICE_SELECTORS = [
   '[class*="ProductPrice"]',
   'span.price',
   '.price',
-  '[itemprop="price"]',
-  'meta[property="product:price:amount"]',
-  '[data-price]',
   '[class*="price"]',
   '[id*="price"]',
 ]
@@ -40,6 +39,8 @@ const DOMAIN_CURRENCY_HINTS: Record<string, CurrencyCode> = {
   '.uk': 'GBP',
   '.eu': 'EUR',
 }
+
+const NON_PRODUCT_PRICE_HINTS = ['shipping', 'frakt', 'delivery', 'recension', 'review', 'rating', 'kvar', 'stock']
 
 function detectCurrency(raw: string, url: string): CurrencyCode {
   const lowered = raw.toLowerCase()
@@ -79,33 +80,25 @@ function parsePriceText(raw: string): number | null {
   return parsed
 }
 
+function looksLikeNonProductPrice(raw: string): boolean {
+  const lowered = raw.toLowerCase()
+  return NON_PRODUCT_PRICE_HINTS.some(token => lowered.includes(token))
+}
+
+async function maybeConvert(amount: number, sourceCurrency: CurrencyCode, targetCurrency: CurrencyCode): Promise<number> {
+  if (sourceCurrency === targetCurrency) return amount
+
+  try {
+    return await convertCurrency(amount, sourceCurrency, targetCurrency)
+  } catch (err) {
+    console.log('[scraper] currency conversion failed, using source amount', String(err))
+    return amount
+  }
+}
+
 async function extractPriceFromHtml(html: string, url: string, targetCurrency: CurrencyCode): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
   const $ = cheerio.load(html)
 
-  for (const selector of PRICE_SELECTORS) {
-    const el = $(selector).first()
-    if (!el.length) continue
-
-    // Handle meta tags
-    const content = el.attr('content') || el.attr('data-product-price') || el.text()
-    const raw = content.trim()
-    const parsedAmount = parsePriceText(raw)
-    if (!parsedAmount) continue
-    const currency = detectCurrency(raw, url)
-    let price = parsedAmount
-    if (currency !== targetCurrency) {
-      try {
-        price = await convertCurrency(parsedAmount, currency, targetCurrency)
-      } catch (err) {
-        console.log('[scraper] currency conversion failed, using source amount', String(err))
-      }
-    }
-
-    console.log(`[scraper] selector hit ${selector} | raw="${raw.slice(0, 80)}" | scraped_currency=${currency} | target_currency=${targetCurrency} | converted=${price}`)
-    if (!isNaN(price) && price > 0 && price < 1000000) return { price, scrapedCurrency: currency }
-  }
-
-  // JSON-LD product data fallback
   const jsonLdScripts = $('script[type="application/ld+json"]').toArray()
   for (const script of jsonLdScripts) {
     try {
@@ -118,14 +111,7 @@ async function extractPriceFromHtml(html: string, url: string, targetCurrency: C
         if (!amount || Number.isNaN(amount)) continue
 
         const currency = (offer?.priceCurrency as CurrencyCode | undefined) ?? detectCurrency(rawJson, url)
-        let price = amount
-        if (currency !== targetCurrency) {
-          try {
-            price = await convertCurrency(amount, currency, targetCurrency)
-          } catch (err) {
-            console.log('[scraper] currency conversion failed, using source amount', String(err))
-          }
-        }
+        const price = await maybeConvert(amount, currency, targetCurrency)
         console.log(`[scraper] json-ld hit | scraped_currency=${currency} | target_currency=${targetCurrency} | amount=${amount} | converted=${price}`)
         if (!isNaN(price) && price > 0) return { price, scrapedCurrency: currency }
       }
@@ -134,20 +120,32 @@ async function extractPriceFromHtml(html: string, url: string, targetCurrency: C
     }
   }
 
-  // Last resort: find first price-like pattern in page text
+  for (const selector of PRICE_SELECTORS) {
+    const elements = $(selector).toArray()
+    for (const el of elements) {
+      const node = $(el)
+      const content = node.attr('content') || node.attr('data-product-price') || node.attr('data-price') || node.text()
+      const raw = content.trim()
+      if (!raw || looksLikeNonProductPrice(raw)) continue
+
+      const parsedAmount = parsePriceText(raw)
+      if (!parsedAmount) continue
+
+      const currency = detectCurrency(raw, url)
+      const price = await maybeConvert(parsedAmount, currency, targetCurrency)
+
+      console.log(`[scraper] selector hit ${selector} | raw="${raw.slice(0, 80)}" | scraped_currency=${currency} | target_currency=${targetCurrency} | converted=${price}`)
+      if (!isNaN(price) && price > 0 && price < 1000000) return { price, scrapedCurrency: currency }
+    }
+  }
+
   const match = html.match(/(?:\$|€|£|kr|USD|EUR|GBP|SEK|NOK|DKK)?\s*([\d]{1,3}(?:[\s.,]\d{3})*(?:[\.,]\d{2})?)/i)
   if (match) {
+    if (looksLikeNonProductPrice(match[0])) return { price: null, scrapedCurrency: null }
     const amount = parsePriceText(match[0])
     if (!amount) return { price: null, scrapedCurrency: null }
     const currency = detectCurrency(match[0], url)
-    let price = amount
-    if (currency !== targetCurrency) {
-      try {
-        price = await convertCurrency(amount, currency, targetCurrency)
-      } catch (err) {
-        console.log('[scraper] currency conversion failed, using source amount', String(err))
-      }
-    }
+    const price = await maybeConvert(amount, currency, targetCurrency)
     console.log(`[scraper] regex fallback hit | raw="${match[0]}" | scraped_currency=${currency} | target_currency=${targetCurrency} | converted=${price}`)
     if (!isNaN(price) && price > 0) return { price, scrapedCurrency: currency }
   }
@@ -155,7 +153,6 @@ async function extractPriceFromHtml(html: string, url: string, targetCurrency: C
   return { price: null, scrapedCurrency: null }
 }
 
-// ── Direct fetch (free, works on most sites) ────────────────
 async function scrapeDirectly(url: string, targetCurrency: CurrencyCode): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
   const res = await fetch(url, {
     headers: {
@@ -171,14 +168,13 @@ async function scrapeDirectly(url: string, targetCurrency: CurrencyCode): Promis
   return extractPriceFromHtml(html, url, targetCurrency)
 }
 
-// ── ScraperAPI fallback (handles JS rendering, Cloudflare) ──
 async function scrapeViaApi(url: string, targetCurrency: CurrencyCode): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
   if (!process.env.SCRAPER_API_KEY) return { price: null, scrapedCurrency: null }
 
   const scraperUrl = new URL('http://api.scraperapi.com')
   scraperUrl.searchParams.set('api_key', process.env.SCRAPER_API_KEY)
   scraperUrl.searchParams.set('url', url)
-  scraperUrl.searchParams.set('render', 'true') // JS rendering
+  scraperUrl.searchParams.set('render', 'true')
 
   const res = await fetch(scraperUrl.toString(), {
     signal: AbortSignal.timeout(30000),
@@ -189,7 +185,6 @@ async function scrapeViaApi(url: string, targetCurrency: CurrencyCode): Promise<
   return extractPriceFromHtml(html, url, targetCurrency)
 }
 
-// ── Main export: try cheap first, fall back ─────────────────
 export async function scrapePrice(url: string, preferredCurrency?: string): Promise<{
   price: number | null
   scrapedCurrency: CurrencyCode | null
@@ -199,17 +194,15 @@ export async function scrapePrice(url: string, preferredCurrency?: string): Prom
 }> {
   const targetCurrency = normalizeCurrencyCode(preferredCurrency)
 
-  // Attempt 1: Direct
   try {
     const result = await scrapeDirectly(url, targetCurrency)
     if (result.price !== null) {
       return { ...result, targetCurrency, method: 'direct' }
     }
-  } catch (err) {
-    // Site blocked direct fetch — fall through to ScraperAPI
+  } catch {
+    // Fall through to ScraperAPI.
   }
 
-  // Attempt 2: ScraperAPI
   try {
     const result = await scrapeViaApi(url, targetCurrency)
     if (result.price !== null) {

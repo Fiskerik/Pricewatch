@@ -1,4 +1,4 @@
-import { Product } from '@/types'
+import { Product, CompetitorUrl } from '@/types'
 import { formatMoney, SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/currency'
 
 interface Props {
@@ -6,11 +6,12 @@ interface Props {
   isExpanded: boolean
   onToggle: () => void
   onAddCompetitor: () => void
+  onEditCompetitor: (competitor: CompetitorUrl) => void
   onCurrencyUpdated: (productId: string, currencyCode: string) => void
   competitorLimit: number
 }
 
-export default function ProductCard({ product, isExpanded, onToggle, onAddCompetitor, onCurrencyUpdated, competitorLimit }: Props) {
+export default function ProductCard({ product, isExpanded, onToggle, onAddCompetitor, onEditCompetitor, onCurrencyUpdated, competitorLimit }: Props) {
   const competitors = product.competitor_urls ?? []
   const hasChanges = competitors.some(c => {
     if (!c.last_changed_at) return false
@@ -77,6 +78,13 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
                   <div className="text-sm font-semibold truncate">{comp.label || new URL(comp.url).hostname}</div>
                   <div className="text-xs text-gray-400 mt-0.5">Checked {comp.last_checked_at ? new Date(comp.last_checked_at).toLocaleString() : 'never'}</div>
                 </div>
+
+                <button
+                  onClick={() => onEditCompetitor(comp)}
+                  className="text-xs font-semibold text-gray-500 hover:text-black transition-colors"
+                >
+                  Edit
+                </button>
 
                 {comp.last_price !== null ? (
                   <div className="text-right shrink-0">

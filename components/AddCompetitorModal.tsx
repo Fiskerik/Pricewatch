@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CompetitorUrl } from '@/types'
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
 
@@ -9,9 +9,21 @@ interface Props {
   onClose: () => void
   onAdded: (competitor: CompetitorUrl) => void
   onUpdated: (competitor: CompetitorUrl) => void
+  mode?: 'add' | 'edit'
+  competitor?: CompetitorUrl | null
+  onDeleted?: (competitorId: string) => void
 }
 
-export default function AddCompetitorModal({ productId, productCurrency, onClose, onAdded, onUpdated }: Props) {
+export default function AddCompetitorModal({
+  productId,
+  productCurrency,
+  onClose,
+  onAdded,
+  onUpdated,
+  mode = 'add',
+  competitor,
+  onDeleted,
+}: Props) {
   const [url, setUrl] = useState('')
   const [label, setLabel] = useState('')
   const [checking, setChecking] = useState(false)
@@ -19,6 +31,24 @@ export default function AddCompetitorModal({ productId, productCurrency, onClose
   const [confirmedPrice, setConfirmedPrice] = useState('')
   const [scrapeError, setScrapeError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    if (mode === 'edit' && competitor) {
+      setUrl(competitor.url)
+      setLabel(competitor.label ?? '')
+      setScrapedPrice(competitor.last_price)
+      setConfirmedPrice(competitor.last_price !== null ? competitor.last_price.toFixed(2) : '')
+      setScrapeError(null)
+      return
+    }
+
+    setUrl('')
+    setLabel('')
+    setScrapedPrice(null)
+    setConfirmedPrice('')
+    setScrapeError(null)
+  }, [mode, competitor])
 
   const handleCheckPrice = async () => {
     if (!url) return
@@ -52,6 +82,20 @@ export default function AddCompetitorModal({ productId, productCurrency, onClose
     setSaving(true)
 
     try {
+      if (mode === 'edit' && competitor) {
+        const res = await fetch('/api/competitors/update', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ competitorId: competitor.id, url, label }),
+        })
+        const data = await res.json()
+        if (data.competitor) {
+          onUpdated(data.competitor)
+          onClose()
+        }
+        return
+      }
+
       const initialPrice = confirmedPrice ? parseFloat(confirmedPrice) : null
       const res = await fetch('/api/competitors/add', {
         method: 'POST',
@@ -83,12 +127,32 @@ export default function AddCompetitorModal({ productId, productCurrency, onClose
     }
   }
 
+  const handleDelete = async () => {
+    if (!competitor) return
+    setDeleting(true)
+
+    try {
+      const res = await fetch('/api/competitors/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competitorId: competitor.id }),
+      })
+
+      if (res.ok) {
+        onDeleted?.(competitor.id)
+        onClose()
+      }
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
         <div className="px-7 pt-7 pb-5 border-b border-gray-100">
-          <h2 className="font-extrabold text-lg">Add Competitor URL</h2>
-          <p className="text-sm text-gray-500 mt-1">Confirm fetched price before you start watching.</p>
+          <h2 className="font-extrabold text-lg">{mode === 'edit' ? 'Edit Competitor URL' : 'Add Competitor URL'}</h2>
+          <p className="text-sm text-gray-500 mt-1">{mode === 'edit' ? 'Update the saved competitor details.' : 'Confirm fetched price before you start watching.'}</p>
         </div>
 
         <div className="px-7 py-5 space-y-4">
@@ -146,13 +210,22 @@ export default function AddCompetitorModal({ productId, productCurrency, onClose
         </div>
 
         <div className="px-7 pb-7 flex gap-3">
+          {mode === 'edit' && competitor ? (
+            <button
+              onClick={handleDelete}
+              disabled={deleting || saving}
+              className="border border-red-200 text-red-600 font-semibold text-sm py-2.5 px-4 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-40"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          ) : null}
           <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 font-semibold text-sm py-2.5 rounded-xl hover:bg-gray-50 transition-colors">Cancel</button>
           <button
             onClick={handleSave}
-            disabled={!url || saving}
+            disabled={!url || saving || deleting}
             className="flex-2 flex-1 bg-black text-white font-bold text-sm py-2.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {saving ? 'Saving...' : 'Start Watching'}
+            {saving ? 'Saving...' : mode === 'edit' ? 'Save Changes' : 'Start Watching'}
           </button>
         </div>
       </div>
