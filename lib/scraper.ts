@@ -155,9 +155,9 @@ async function extractPriceFromHtml(
   }
 
   // 4. Regex last resort — find first plausible price in page
-  const matches = [...html.matchAll(
+  const matches = Array.from(html.matchAll(
     /(?:price["\s:]+|"price":\s*)([\d]{1,3}(?:[\s.,\u00a0\u202f]\d{3})*(?:[.,]\d{2})?)/gi
-  )]
+  ))
   for (const match of matches) {
     if (looksLikeNonProductPrice(match[0])) continue
     const amount = parsePriceText(match[1])
@@ -217,12 +217,12 @@ export interface ScrapeResult {
   error?: string
 }
 
-export async function scrapePrice(url: string): Promise<ScrapeResult> {
+export async function scrapePrice(url: string, targetCurrency?: CurrencyCode): Promise<ScrapeResult> {
   // Try direct first
   try {
     const result = await scrapeDirectly(url)
     if (result.price !== null) {
-      return { ...result, method: 'direct' }
+      return { ...result, scrapedCurrency: result.scrapedCurrency ?? targetCurrency ?? null, method: 'direct' }
     }
     // Got HTML but no price — fall through to ScraperAPI (JS rendering needed)
   } catch (err) {
@@ -233,7 +233,7 @@ export async function scrapePrice(url: string): Promise<ScrapeResult> {
   try {
     const result = await scrapeViaScraperApi(url)
     if (result.price !== null) {
-      return { ...result, method: 'scraperapi' }
+      return { ...result, scrapedCurrency: result.scrapedCurrency ?? targetCurrency ?? null, method: 'scraperapi' }
     }
   } catch (err) {
     return { price: null, scrapedCurrency: null, method: 'failed', error: String(err) }

@@ -38,7 +38,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-8">
-            <Image src="/logo.jpg" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
+            <Image src="/logo.png" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
             <span className="font-bold">PriceWatch</span>
           </Link>
           <h1 className="text-2xl font-extrabold tracking-tight">Welcome back</h1>
