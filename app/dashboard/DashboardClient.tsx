@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { Store, Product, CompetitorUrl, PLAN_LIMITS } from '@/types'
 import Sidebar from '@/components/Sidebar'
@@ -22,6 +22,22 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [addCompetitorFor, setAddCompetitorFor] = useState<string | null>(null)
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
+  const [showVat, setShowVat] = useState(true)
+
+  useEffect(() => {
+    const storedPreference = window.localStorage.getItem('pricewatch:showVat')
+    if (storedPreference === 'false') {
+      setShowVat(false)
+    }
+  }, [])
+
+  const handleVatToggle = () => {
+    setShowVat(prev => {
+      const nextValue = !prev
+      window.localStorage.setItem('pricewatch:showVat', String(nextValue))
+      return nextValue
+    })
+  }
 
   const plan = store?.plan ?? 'free'
   const limits = PLAN_LIMITS[plan]
@@ -86,13 +102,31 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               Checks run {limits.checkFrequency} · {products.length} products · {totalCompetitors} URLs tracked
             </p>
           </div>
-          <button
-            onClick={() => setShowAddProduct(true)}
-            disabled={products.length >= limits.products && limits.products !== Infinity}
-            className="bg-black text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            + Add Product
-          </button>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 font-semibold">
+              <span>VAT on prices</span>
+              <button
+                type="button"
+                onClick={handleVatToggle}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showVat ? 'bg-black' : 'bg-gray-300'}`}
+                aria-pressed={showVat}
+                aria-label="Toggle VAT on prices"
+                title="Toggle VAT on prices"
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${showVat ? 'translate-x-5' : 'translate-x-1'}`}
+                />
+              </button>
+            </label>
+
+            <button
+              onClick={() => setShowAddProduct(true)}
+              disabled={products.length >= limits.products && limits.products !== Infinity}
+              className="bg-black text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              + Add Product
+            </button>
+          </div>
         </div>
 
         {/* Stat Cards */}
@@ -151,6 +185,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                 onCurrencyUpdated={handleProductCurrencyUpdated}
                 competitorLimit={limits.competitors}
+                showVat={showVat}
               />
             ))}
           </div>
