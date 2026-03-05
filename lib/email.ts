@@ -1,4 +1,24 @@
-
+/**
+ * email.ts — Alert delivery with multiple provider support
+ *
+ * Set ONE of these in Vercel env vars:
+ *
+ *  Gmail (free, no domain needed):
+ *    EMAIL_PROVIDER=gmail
+ *    GMAIL_USER=you@gmail.com
+ *    GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+ *    → Get app password: myaccount.google.com/apppasswords
+ *
+ *  Resend free tier (no custom domain needed — use onboarding@resend.dev):
+ *    EMAIL_PROVIDER=resend
+ *    RESEND_API_KEY=re_...
+ *    EMAIL_FROM=onboarding@resend.dev
+ *
+ *  SendGrid (100 free/day, verify a single sender email — no domain needed):
+ *    EMAIL_PROVIDER=sendgrid
+ *    SENDGRID_API_KEY=SG....
+ *    EMAIL_FROM=you@gmail.com
+ */
 
 const provider = process.env.EMAIL_PROVIDER
   ?? (process.env.RESEND_API_KEY ? 'resend' : process.env.GMAIL_USER ? 'gmail' : 'none')
@@ -77,8 +97,33 @@ async function sendViaResend(to: string, subject: string, html: string) {
   await resend.emails.send({ from, to, subject, html })
 }
 
+async function sendViaGmail(to: string, subject: string, html: string) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const nodemailer = require('nodemailer')
+  const user = process.env.GMAIL_USER
+  const pass = process.env.GMAIL_APP_PASSWORD
+  if (!user || !pass) throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD must both be set')
+  const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user, pass } })
+  await transporter.sendMail({ from: `PriceWatch <${user}>`, to, subject, html })
+}
 
-
+async function sendViaSendGrid(to: string, subject: string, html: string) {
+  const apiKey = process.env.SENDGRID_API_KEY
+  const from = process.env.EMAIL_FROM
+  if (!apiKey) throw new Error('SENDGRID_API_KEY not set')
+  if (!from) throw new Error('EMAIL_FROM (verified sender email) must be set for SendGrid')
+  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: from, name: 'PriceWatch' },
+      subject,
+      content: [{ type: 'text/html', value: html }],
+    }),
+  })
+  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${await res.text().catch(() => '')}`)
+}
 
 export interface PriceAlertParams {
   to: string
