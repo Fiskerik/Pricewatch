@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter } from 'next/navigation'
@@ -24,6 +25,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClientComponentClient()
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -32,11 +34,11 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
 
   const usagePct = planLimit === Infinity ? 0 : (productCount / planLimit) * 100
 
-  return (
-    <aside className="w-56 bg-white border-r border-gray-100 flex flex-col py-5 shrink-0">
+  const SidebarContent = (
+    <>
       {/* Logo */}
       <div className="px-5 pb-5 border-b border-gray-100">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2" onClick={() => setMobileOpen(false)}>
           <Image src="/logo.png" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
           <span className="font-bold text-sm">PriceWatch</span>
         </Link>
@@ -50,7 +52,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         </div>
       ) : (
         <div className="px-5 py-3 border-b border-gray-100">
-          <Link href="/dashboard/connect-shopify" className="text-xs font-semibold text-purple-600 hover:underline">
+          <Link href="/dashboard/connect-shopify" className="text-xs font-semibold text-purple-600 hover:underline" onClick={() => setMobileOpen(false)}>
             + Connect Shopify store
           </Link>
         </div>
@@ -62,6 +64,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
           <Link
             key={item.href}
             href={item.href}
+            onClick={() => setMobileOpen(false)}
             className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
               pathname === item.href
                 ? 'bg-gray-100 font-semibold text-gray-900'
@@ -89,7 +92,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
             </>
           )}
           {plan === 'free' && (
-            <Link href="/dashboard/upgrade" className="block w-full text-center bg-purple-600 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-purple-700 transition-colors">
+            <Link href="/dashboard/upgrade" className="block w-full text-center bg-purple-600 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-purple-700 transition-colors" onClick={() => setMobileOpen(false)}>
               Upgrade to Pro →
             </Link>
           )}
@@ -106,6 +109,30 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
           <button onClick={handleSignOut} className="text-xs text-gray-400 hover:text-gray-600">↪</button>
         </div>
       </div>
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      <div className="lg:hidden sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2">
+          <Image src="/logo.png" alt="PriceWatch logo" width={24} height={24} className="rounded-md" />
+          <span className="font-bold text-sm">PriceWatch</span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setMobileOpen(prev => !prev)}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700"
+        >
+          {mobileOpen ? 'Close' : 'Menu'}
+        </button>
+      </div>
+
+      {mobileOpen && <button type="button" className="lg:hidden fixed inset-0 bg-black/35 z-40" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
+
+      <aside className={`fixed top-0 left-0 z-50 h-full w-72 max-w-[85vw] bg-white border-r border-gray-100 flex flex-col py-5 shrink-0 transform transition-transform duration-200 lg:static lg:w-56 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {SidebarContent}
+      </aside>
+    </>
   )
 }
