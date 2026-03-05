@@ -111,7 +111,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         if (comp?.last_price != null) {
           setPendingPrices(prev => ({
             ...prev,
-            [competitorId]: { price: comp.last_price, currency: comp.last_price_currency ?? 'USD' },
+            [competitorId]: { price: comp.last_price, currency: comp.last_price_currency ?? 'USD', includesVat: true },
           }))
           setProducts(prev => prev.map(p => ({
             ...p,
