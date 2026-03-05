@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -18,6 +19,17 @@ export default function LoginPage() {
     })
     setSent(true)
     setLoading(false)
+  }
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true)
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+    setGoogleLoading(false)
   }
 
   return (
@@ -58,6 +70,14 @@ export default function LoginPage() {
                 className="w-full bg-black text-white font-bold py-2.5 rounded-lg text-sm hover:bg-gray-800 transition-colors disabled:opacity-50"
               >
                 {loading ? 'Sending...' : 'Send magic link'}
+              </button>
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={googleLoading}
+                className="w-full border border-gray-200 text-gray-900 font-semibold py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                {googleLoading ? 'Redirecting...' : 'Sign in with Google'}
               </button>
             </form>
           )}
