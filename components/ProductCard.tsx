@@ -5,19 +5,24 @@ import { formatMoney, SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/
 import { applyVat, detectUserCountryCode, getVatRateForCountry } from '@/lib/vat'
 
 interface PendingPrice { price: number; currency: string }
+interface ConvertedCurrencyResponse {
+  product?: { id: string; currency_code: string; our_price: number | null }
+  competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
+}
 
 interface Props {
   product: Product
   isExpanded: boolean
   onToggle: () => void
+  onEditProduct: (product: Product) => void
   onAddCompetitor: () => void
   onEditCompetitor: (competitor: CompetitorUrl) => void
-  onCurrencyUpdated: (productId: string, currencyCode: string) => void
+  onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
   competitorLimit: number
   showVat: boolean
   fetchingIds: Record<string, boolean>
   pendingPrices: Record<string, PendingPrice>
-  onConfirmPrice: (competitorId: string) => void
+  onConfirmPrice: (competitorId: string, includesVat: boolean) => void
   onRejectPrice: (competitorId: string) => void
 }
 
@@ -94,13 +99,14 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 }
 
 export default function ProductCard({
-  product, isExpanded, onToggle, onAddCompetitor, onEditCompetitor,
+  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor,
   onCurrencyUpdated, competitorLimit, showVat,
   fetchingIds, pendingPrices, onConfirmPrice, onRejectPrice,
 }: Props) {
   const competitors = product.competitor_urls ?? []
   const [userCountryCode, setUserCountryCode] = useState<string | null>(null)
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
+  const [pendingVatIncluded, setPendingVatIncluded] = useState<Record<string, boolean>>({})
 
   const hasChanges = competitors.some(c => {
     if (!c.last_changed_at) return false
@@ -120,7 +126,9 @@ export default function ProductCard({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ productId: product.id, currencyCode }),
     })
-    if (res.ok) onCurrencyUpdated(product.id, currencyCode)
+    if (!res.ok) return
+    const data = await res.json()
+    onCurrencyUpdated(product.id, currencyCode, data)
   }
 
   return (
@@ -140,6 +148,13 @@ export default function ProductCard({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEditProduct(product) }}
+            className="text-gray-400 hover:text-black transition-colors text-sm"
+            title="Edit product listing"
+          >
+            ✏️
+          </button>
           {hasFetching && (
             <span className="bg-blue-50 text-blue-600 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -256,11 +271,27 @@ export default function ProductCard({
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold text-amber-700 mb-0.5">✓ Price fetched — does this look right?</div>
                       <div className="text-lg font-extrabold text-gray-900">
-                        {formatMoney(applyVat(pending.price, showVat ? vatRate : 0), normalizeCurrencyCode(pending.currency))}
-                        {showVat && vatRate > 0 && (
-                          <span className="text-xs font-normal text-gray-400 ml-1">incl. VAT</span>
+                        {formatMoney(
+                          pendingVatIncluded[comp.id] ? pending.price : applyVat(pending.price, vatRate),
+                          normalizeCurrencyCode(pending.currency),
+                        )}
+                        {vatRate > 0 && (
+                          <span className="text-xs font-normal text-gray-400 ml-1">
+                            {pendingVatIncluded[comp.id] ? 'incl. VAT' : `VAT added (${vatRate}%)`}
+                          </span>
                         )}
                       </div>
+                      {vatRate > 0 && (
+                        <label className="inline-flex items-center gap-2 mt-2 text-xs text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={!!pendingVatIncluded[comp.id]}
+                            onChange={(e) => setPendingVatIncluded(prev => ({ ...prev, [comp.id]: e.target.checked }))}
+                            className="rounded border-gray-300"
+                          />
+                          VAT included in fetched price
+                        </label>
+                      )}
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
@@ -270,7 +301,7 @@ export default function ProductCard({
                         ✕ Wrong
                       </button>
                       <button
-                        onClick={() => onConfirmPrice(comp.id)}
+                        onClick={() => onConfirmPrice(comp.id, !!pendingVatIncluded[comp.id])}
                         className="text-xs font-semibold text-white bg-black px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
                       >
                         ✓ Correct

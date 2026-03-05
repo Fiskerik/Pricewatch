@@ -7,35 +7,58 @@ interface Props {
   storeId: string
   onClose: () => void
   onAdded: (product: Product) => void
+  onUpdated?: (product: Product) => void
+  mode?: 'add' | 'edit'
+  product?: Product | null
 }
 
-export default function AddProductModal({ storeId, onClose, onAdded }: Props) {
-  const [title, setTitle] = useState('')
-  const [ourPrice, setOurPrice] = useState('')
-  const [currencyCode, setCurrencyCode] = useState('USD')
+export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, mode = 'add', product }: Props) {
+  const [title, setTitle] = useState(product?.title ?? '')
+  const [ourPrice, setOurPrice] = useState(product?.our_price !== null && product?.our_price !== undefined ? String(product.our_price) : '')
+  const [currencyCode, setCurrencyCode] = useState(product?.currency_code ?? 'USD')
   const [saving, setSaving] = useState(false)
+
+  const isEditMode = mode === 'edit' && !!product
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title || !storeId) return
     setSaving(true)
 
-    const res = await fetch('/api/products/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storeId, title, currencyCode, ourPrice: ourPrice ? parseFloat(ourPrice) : null }),
-    })
-    const data = await res.json()
-    if (data.product) onAdded(data.product)
-    setSaving(false)
+    try {
+      const endpoint = isEditMode ? '/api/products/update' : '/api/products/add'
+      const method = isEditMode ? 'PATCH' : 'POST'
+      const payload = isEditMode
+        ? { productId: product.id, title, currencyCode, ourPrice: ourPrice ? parseFloat(ourPrice) : null }
+        : { storeId, title, currencyCode, ourPrice: ourPrice ? parseFloat(ourPrice) : null }
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (data.product) {
+        if (isEditMode) {
+          onUpdated?.(data.product)
+        } else {
+          onAdded(data.product)
+        }
+      }
+      setSaving(false)
+    } catch {
+      setSaving(false)
+    }
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
         <div className="px-7 pt-7 pb-5 border-b border-gray-100">
-          <h2 className="font-extrabold text-lg">Add Product</h2>
-          <p className="text-sm text-gray-500 mt-1">Add manually or connect Shopify to sync automatically.</p>
+          <h2 className="font-extrabold text-lg">{isEditMode ? 'Edit Product' : 'Add Product'}</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            {isEditMode ? 'Update your product listing details.' : 'Add manually or connect Shopify to sync automatically.'}
+          </p>
         </div>
 
         <form onSubmit={handleSave} className="px-7 py-5 space-y-4">
@@ -79,7 +102,7 @@ export default function AddProductModal({ storeId, onClose, onAdded }: Props) {
               Cancel
             </button>
             <button type="submit" disabled={saving || !title} className="flex-1 bg-black text-white font-bold text-sm py-2.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40">
-              {saving ? 'Adding...' : 'Add Product'}
+              {saving ? (isEditMode ? 'Saving...' : 'Adding...') : (isEditMode ? 'Save Changes' : 'Add Product')}
             </button>
           </div>
         </form>

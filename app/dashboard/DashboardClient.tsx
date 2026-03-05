@@ -27,6 +27,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null)
   const [addCompetitorFor, setAddCompetitorFor] = useState<string | null>(null)
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
 
   // VAT state lifted up — avoids flash-of-no-VAT in ProductCard
@@ -123,8 +124,46 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       .finally(() => { setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n }) })
   }
 
-  const handleConfirmPrice = (id: string) => {
+  const handleConfirmPrice = async (id: string, includesVat: boolean) => {
+    const pending = pendingPrices[id]
+    const competitor = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === id)
+    if (!pending || !competitor) {
+      setPendingPrices(prev => { const n = { ...prev }; delete n[id]; return n })
+      return
+    }
+
+    const adjustedPrice = includesVat ? pending.price : applyVat(pending.price, vatRate)
+    console.log('[dashboard] confirming pending competitor price', {
+      competitorId: id,
+      fetchedPrice: pending.price,
+      includesVat,
+      adjustedPrice,
+      vatRate,
+      currency: pending.currency,
+    })
+
+    setProducts(prev => prev.map(p => ({
+      ...p,
+      competitor_urls: (p.competitor_urls ?? []).map(c =>
+        c.id === id
+          ? { ...c, last_price: adjustedPrice, last_price_currency: pending.currency, last_checked_at: new Date().toISOString() }
+          : c,
+      ),
+    })))
+
     setPendingPrices(prev => { const n = { ...prev }; delete n[id]; return n })
+
+    await fetch('/api/competitors/update', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        competitorId: id,
+        url: competitor.url,
+        label: competitor.label,
+        updatedPrice: adjustedPrice,
+        updatedCurrency: pending.currency,
+      }),
+    }).catch(() => {})
   }
 
   const handleRejectPrice = async (id: string) => {
@@ -172,8 +211,33 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n })
   }
 
-  const handleProductCurrencyUpdated = (productId: string, currencyCode: string) => {
-    setProducts(prev => prev.map(p => p.id === productId ? { ...p, currency_code: currencyCode } : p))
+  const handleProductCurrencyUpdated = (
+    productId: string,
+    currencyCode: string,
+    converted?: {
+      product?: { our_price: number | null }
+      competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
+    },
+  ) => {
+    const convertedCompetitorsById = Object.fromEntries((converted?.competitors ?? []).map(c => [c.id, c]))
+    setProducts(prev => prev.map(p => {
+      if (p.id !== productId) return p
+      return {
+        ...p,
+        currency_code: currencyCode,
+        our_price: converted?.product?.our_price ?? p.our_price,
+        competitor_urls: (p.competitor_urls ?? []).map(c => ({
+          ...c,
+          last_price: convertedCompetitorsById[c.id]?.last_price ?? c.last_price,
+          last_price_currency: convertedCompetitorsById[c.id]?.last_price_currency ?? c.last_price_currency,
+        })),
+      }
+    }))
+  }
+
+  const handleProductUpdated = (updatedProduct: Product) => {
+    setProducts(prev => prev.map(p => p.id === updatedProduct.id ? { ...p, ...updatedProduct } : p))
+    setEditingProduct(null)
   }
 
   return (
@@ -293,6 +357,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     product={product}
                     isExpanded={expandedProduct === product.id}
                     onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
+                    onEditProduct={(selectedProduct) => setEditingProduct(selectedProduct)}
                     onAddCompetitor={() => setAddCompetitorFor(product.id)}
                     onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                     onCurrencyUpdated={handleProductCurrencyUpdated}
@@ -433,6 +498,16 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           onAdded={() => {}}
           onUpdated={(comp) => handleCompetitorUpdated(editingCompetitor.productId, comp)}
           onDeleted={(competitorId) => handleCompetitorDeleted(editingCompetitor.productId, competitorId)}
+        />
+      )}
+      {editingProduct && (
+        <AddProductModal
+          mode="edit"
+          product={editingProduct}
+          storeId={store?.id ?? ''}
+          onClose={() => setEditingProduct(null)}
+          onAdded={() => {}}
+          onUpdated={handleProductUpdated}
         />
       )}
       {showAddProduct && (
