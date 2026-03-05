@@ -32,6 +32,7 @@ export default function AddCompetitorModal({
   const [confirmedPrice, setConfirmedPrice] = useState('')
   const [scrapeError, setScrapeError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export default function AddCompetitorModal({
       setScrapedCurrency(productCurrency)
       setConfirmedPrice(competitor.last_price !== null ? competitor.last_price.toFixed(2) : '')
       setScrapeError(null)
+      setSaveError(null)
       return
     }
 
@@ -51,12 +53,14 @@ export default function AddCompetitorModal({
     setScrapedCurrency(null)
     setConfirmedPrice('')
     setScrapeError(null)
+    setSaveError(null)
   }, [mode, competitor])
 
   const handleCheckPrice = async () => {
     if (!url) return
     setChecking(true)
     setScrapeError(null)
+    setSaveError(null)
     setScrapedPrice(null)
     setScrapedCurrency(null)
     setConfirmedPrice('')
@@ -85,6 +89,7 @@ export default function AddCompetitorModal({
   const handleSave = async () => {
     if (!url) return
     setSaving(true)
+    setSaveError(null)
 
     try {
       if (mode === 'edit' && competitor) {
@@ -101,6 +106,13 @@ export default function AddCompetitorModal({
           }),
         })
         const data = await res.json()
+        if (!res.ok) {
+          const message = data?.error || 'Unable to save competitor changes.'
+          console.error('[AddCompetitorModal] update failed', { competitorId: competitor.id, url, status: res.status, message })
+          setSaveError(message)
+          return
+        }
+
         if (data.competitor) {
           onUpdated(data.competitor)
           onClose()
@@ -121,6 +133,13 @@ export default function AddCompetitorModal({
         }),
       })
       const data = await res.json()
+      if (!res.ok) {
+        const message = data?.error || 'Unable to add this competitor URL.'
+        console.error('[AddCompetitorModal] add failed', { productId, url, status: res.status, message })
+        setSaveError(message)
+        return
+      }
+
       if (data.competitor) {
         onAdded(data.competitor)
         onClose()
@@ -140,6 +159,9 @@ export default function AddCompetitorModal({
           })
           .catch(() => {})
       }
+    } catch (err) {
+      console.error('[AddCompetitorModal] save request failed', { url, mode, error: String(err) })
+      setSaveError('Something went wrong while saving. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -179,7 +201,7 @@ export default function AddCompetitorModal({
             <div className="flex gap-2">
               <input
                 value={url}
-                onChange={e => { setUrl(e.target.value); setScrapedPrice(null); setConfirmedPrice(''); setScrapeError(null) }}
+                onChange={e => { setUrl(e.target.value); setScrapedPrice(null); setConfirmedPrice(''); setScrapeError(null); setSaveError(null) }}
                 placeholder="https://competitor.com/products/widget"
                 className="flex-1 border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
               />
@@ -205,6 +227,7 @@ export default function AddCompetitorModal({
 
           {checking && <div className="bg-gray-50 rounded-xl p-3.5 text-sm text-gray-500 text-center animate-pulse">Fetching price from page...</div>}
           {scrapeError && <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-sm text-red-600">{scrapeError}</div>}
+          {saveError && <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-sm text-red-600">{saveError}</div>}
 
           {scrapedPrice !== null && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
