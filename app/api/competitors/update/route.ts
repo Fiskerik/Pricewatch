@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase'
-
+import { cleanUrl } from '@/lib/scraper'
 
 function normalizeCompetitorUrl(rawUrl: string): string {
   const parsed = new URL(rawUrl.trim())
@@ -19,13 +19,11 @@ export async function PATCH(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { competitorId, url, label, updatedPrice, updatedCurrency } = await req.json()
-  if (!competitorId || !url) {
-    return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
-  }
+  if (!competitorId || !url) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   let normalizedUrl = ''
   try {
-    normalizedUrl = normalizeCompetitorUrl(String(url))
+    normalizedUrl = normalizeCompetitorUrl(cleanUrl(String(url)))
   } catch {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
@@ -37,9 +35,7 @@ export async function PATCH(req: NextRequest) {
     .eq('products.stores.user_id', user.id)
     .single()
 
-  if (!competitorWithOwner) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
+  if (!competitorWithOwner) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const updatePayload: Record<string, unknown> = {
     url: normalizedUrl,
@@ -50,7 +46,6 @@ export async function PATCH(req: NextRequest) {
     updatePayload.last_price = updatedPrice
     updatePayload.last_checked_at = new Date().toISOString()
   }
-
   if (typeof updatedCurrency === 'string' && updatedCurrency.trim()) {
     updatePayload.last_price_currency = updatedCurrency.trim().toUpperCase()
   }
@@ -63,17 +58,7 @@ export async function PATCH(req: NextRequest) {
     .single()
 
   if (error) {
-    console.error('[competitors/update] update failed', {
-      userId: user.id,
-      competitorId,
-      normalizedUrl,
-      message: error.message,
-      code: error.code,
-      details: error.details,
-    })
-    if (error.code === '23505') {
-      return NextResponse.json({ error: 'This competitor URL is already added for this product.' }, { status: 409 })
-    }
+    if (error.code === '23505') return NextResponse.json({ error: 'This competitor URL is already added for this product.' }, { status: 409 })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
