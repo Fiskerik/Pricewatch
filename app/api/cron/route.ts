@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     .select(`
       id, url, label, last_price,
       products (
-        id, title, our_price,
+        id, title, our_price, currency_code,
         stores (
           id, plan,
           auth_users:user_id (email)
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      const { price } = await scrapePrice(comp.url)
+      const { price } = await scrapePrice(comp.url, product?.currency_code ?? 'USD')
       results.checked++
 
       // Update last_checked_at regardless

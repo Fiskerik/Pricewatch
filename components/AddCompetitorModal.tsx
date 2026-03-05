@@ -1,19 +1,22 @@
 'use client'
 import { useState } from 'react'
 import { CompetitorUrl } from '@/types'
+import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
 
 interface Props {
   productId: string
+  productCurrency: string
   onClose: () => void
   onAdded: (competitor: CompetitorUrl) => void
   onUpdated: (competitor: CompetitorUrl) => void
 }
 
-export default function AddCompetitorModal({ productId, onClose, onAdded, onUpdated }: Props) {
+export default function AddCompetitorModal({ productId, productCurrency, onClose, onAdded, onUpdated }: Props) {
   const [url, setUrl] = useState('')
   const [label, setLabel] = useState('')
   const [checking, setChecking] = useState(false)
   const [scrapedPrice, setScrapedPrice] = useState<number | null>(null)
+  const [confirmedPrice, setConfirmedPrice] = useState('')
   const [scrapeError, setScrapeError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -22,16 +25,18 @@ export default function AddCompetitorModal({ productId, onClose, onAdded, onUpda
     setChecking(true)
     setScrapeError(null)
     setScrapedPrice(null)
+    setConfirmedPrice('')
 
     try {
       const res = await fetch('/api/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, targetCurrency: productCurrency }),
       })
       const data = await res.json()
       if (data.price) {
         setScrapedPrice(data.price)
+        setConfirmedPrice(data.price.toFixed(2))
       } else {
         setScrapeError("Couldn't find a price on that page. Try a direct product URL.")
       }
@@ -47,17 +52,17 @@ export default function AddCompetitorModal({ productId, onClose, onAdded, onUpda
     setSaving(true)
 
     try {
+      const initialPrice = confirmedPrice ? parseFloat(confirmedPrice) : null
       const res = await fetch('/api/competitors/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, url, label }),
+        body: JSON.stringify({ productId, url, label, initialPrice: Number.isFinite(initialPrice) ? initialPrice : null }),
       })
       const data = await res.json()
       if (data.competitor) {
         onAdded(data.competitor)
         onClose()
 
-        // Background fetch: keep UI fast while price updates asynchronously.
         fetch('/api/competitors/fetch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -71,9 +76,7 @@ export default function AddCompetitorModal({ productId, onClose, onAdded, onUpda
             }
             return null
           })
-          .catch(() => {
-            // Silent by design: fallback is regular cron checks.
-          })
+          .catch(() => {})
       }
     } finally {
       setSaving(false)
@@ -83,22 +86,18 @@ export default function AddCompetitorModal({ productId, onClose, onAdded, onUpda
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-        {/* Header */}
         <div className="px-7 pt-7 pb-5 border-b border-gray-100">
           <h2 className="font-extrabold text-lg">Add Competitor URL</h2>
-          <p className="text-sm text-gray-500 mt-1">Save now. Price fetching continues in the background.</p>
+          <p className="text-sm text-gray-500 mt-1">Confirm fetched price before you start watching.</p>
         </div>
 
         <div className="px-7 py-5 space-y-4">
-          {/* URL Input */}
           <div>
-            <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
-              Competitor URL *
-            </label>
+            <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">Competitor URL *</label>
             <div className="flex gap-2">
               <input
                 value={url}
-                onChange={e => { setUrl(e.target.value); setScrapedPrice(null); setScrapeError(null) }}
+                onChange={e => { setUrl(e.target.value); setScrapedPrice(null); setConfirmedPrice(''); setScrapeError(null) }}
                 placeholder="https://competitor.com/products/widget"
                 className="flex-1 border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
               />
@@ -112,11 +111,8 @@ export default function AddCompetitorModal({ productId, onClose, onAdded, onUpda
             </div>
           </div>
 
-          {/* Label Input */}
           <div>
-            <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
-              Description (optional)
-            </label>
+            <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">Description (optional)</label>
             <input
               value={label}
               onChange={e => setLabel(e.target.value)}
@@ -125,35 +121,32 @@ export default function AddCompetitorModal({ productId, onClose, onAdded, onUpda
             />
           </div>
 
-          {/* Scrape result */}
-          {checking && (
-            <div className="bg-gray-50 rounded-xl p-3.5 text-sm text-gray-500 text-center animate-pulse">
-              Fetching price from page...
-            </div>
-          )}
+          {checking && <div className="bg-gray-50 rounded-xl p-3.5 text-sm text-gray-500 text-center animate-pulse">Fetching price from page...</div>}
+          {scrapeError && <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-sm text-red-600">{scrapeError}</div>}
 
-          {scrapeError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-sm text-red-600">
-              {scrapeError}
-            </div>
-          )}
-
-          {scrapedPrice && (
-            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3.5 flex items-center justify-between">
-              <span className="text-sm font-semibold text-green-700">✓ Price found</span>
-              <span className="text-2xl font-extrabold text-gray-900">${scrapedPrice.toFixed(2)}</span>
+          {scrapedPrice !== null && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-green-700">✓ Price found</span>
+                <span className="text-lg font-extrabold text-gray-900">{formatMoney(scrapedPrice, normalizeCurrencyCode(productCurrency))}</span>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-700 block mb-1">Confirm price</label>
+                <input
+                  type="number"
+                  value={confirmedPrice}
+                  onChange={e => setConfirmedPrice(e.target.value)}
+                  step="0.01"
+                  min="0"
+                  className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+                />
+              </div>
             </div>
           )}
         </div>
 
-        {/* Footer buttons */}
         <div className="px-7 pb-7 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 border border-gray-200 text-gray-600 font-semibold text-sm py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 font-semibold text-sm py-2.5 rounded-xl hover:bg-gray-50 transition-colors">Cancel</button>
           <button
             onClick={handleSave}
             disabled={!url || saving}

@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { Product } from '@/types'
+import { SUPPORTED_CURRENCIES } from '@/lib/currency'
 
 interface Props {
   storeId: string
@@ -11,6 +12,7 @@ interface Props {
 export default function AddProductModal({ storeId, onClose, onAdded }: Props) {
   const [title, setTitle] = useState('')
   const [ourPrice, setOurPrice] = useState('')
+  const [currencyCode, setCurrencyCode] = useState('USD')
   const [saving, setSaving] = useState(false)
 
   const handleSave = async (e: React.FormEvent) => {
@@ -21,7 +23,7 @@ export default function AddProductModal({ storeId, onClose, onAdded }: Props) {
     const res = await fetch('/api/products/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storeId, title, ourPrice: ourPrice ? parseFloat(ourPrice) : null }),
+      body: JSON.stringify({ storeId, title, currencyCode, ourPrice: ourPrice ? parseFloat(ourPrice) : null }),
     })
     const data = await res.json()
     if (data.product) onAdded(data.product)
@@ -48,19 +50,28 @@ export default function AddProductModal({ storeId, onClose, onAdded }: Props) {
             />
           </div>
           <div>
+            <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">Main Currency</label>
+            <select
+              value={currencyCode}
+              onChange={e => setCurrencyCode(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+            >
+              {SUPPORTED_CURRENCIES.map(code => (
+                <option key={code} value={code}>{code}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">Your Price (optional)</label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={ourPrice}
-                onChange={e => setOurPrice(e.target.value)}
-                placeholder="0.00"
-                className="w-full border border-gray-200 rounded-lg pl-7 pr-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
-              />
-            </div>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={ourPrice}
+              onChange={e => setOurPrice(e.target.value)}
+              placeholder="0.00"
+              className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+            />
           </div>
 
           <div className="flex gap-3 pt-2">

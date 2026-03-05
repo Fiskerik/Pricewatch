@@ -57,6 +57,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     }))
   }
 
+
+  const handleProductCurrencyUpdated = (productId: string, currencyCode: string) => {
+    setProducts(prev => prev.map(p => p.id === productId ? { ...p, currency_code: currencyCode } : p))
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
@@ -132,6 +137,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 isExpanded={expandedProduct === product.id}
                 onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
                 onAddCompetitor={() => setAddCompetitorFor(product.id)}
+                onCurrencyUpdated={handleProductCurrencyUpdated}
                 competitorLimit={limits.competitors}
               />
             ))}
@@ -153,6 +159,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       {addCompetitorFor && (
         <AddCompetitorModal
           productId={addCompetitorFor}
+          productCurrency={products.find(p => p.id === addCompetitorFor)?.currency_code ?? 'USD'}
           onClose={() => setAddCompetitorFor(null)}
           onAdded={(comp) => handleCompetitorAdded(addCompetitorFor, comp)}
           onUpdated={(comp) => handleCompetitorUpdated(addCompetitorFor, comp)}

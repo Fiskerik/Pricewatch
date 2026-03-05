@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
           handle: product.handle,
           image_url: product.images?.[0]?.src ?? null,
           our_price: mainVariant?.price ? parseFloat(mainVariant.price) : null,
+          currency_code: "USD",
         }, { 
           onConflict: 'shopify_product_id,store_id' 
         })
