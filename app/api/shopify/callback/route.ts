@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { shopify, getShopifyProducts, normalizeShopifyProduct } from '@/lib/shopify'
+import { getShopifyClient, getShopifyProducts, normalizeShopifyProduct } from '@/lib/shopify'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { supabaseAdmin } from '@/lib/supabase'
 import { cookies } from 'next/headers'
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.redirect(new URL('/login', req.url))
 
   try {
-    const callback = await shopify.auth.callback({
+    const callback = await getShopifyClient().auth.callback({
       rawRequest: req,
       rawResponse: new Response(),
     })
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const { shop, accessToken } = session
 
     // Save/update store with Shopify credentials
-    const { data: store, error } = await supabaseAdmin
+    const { data: store, error } = await supabaseAdmin()
       .from('stores')
       .update({ shop_domain: shop, access_token: accessToken })
       .eq('user_id', user.id)
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const shopifyProducts = await getShopifyProducts(shop, accessToken!)
     for (const sp of shopifyProducts) {
       const normalized = normalizeShopifyProduct(sp, store.id)
-      await supabaseAdmin
+      await supabaseAdmin()
         .from('products')
         .upsert(normalized, { onConflict: 'shopify_product_id, store_id' })
     }

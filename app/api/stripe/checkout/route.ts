@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
-import { stripe, PLANS, createCheckoutSession } from '@/lib/stripe'
+import { PLANS, createCheckoutSession } from '@/lib/stripe'
 
 export async function POST(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
