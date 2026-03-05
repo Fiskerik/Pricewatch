@@ -229,17 +229,17 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     <div className="flex min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
-      <main className="flex-1 p-8 overflow-y-auto max-h-screen">
+      <main className="flex-1 px-4 py-5 sm:p-8 overflow-y-auto max-h-screen">
 
         {/* Header */}
-        <div className="flex justify-between items-start mb-7">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-5 sm:mb-7">
           <div>
             <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
             <p className="text-sm text-gray-400 mt-0.5">
               Checks run {limits.checkFrequency} · {products.length} products · {totalCompetitors} URLs tracked
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <VatCountrySelector countryCode={vatCountryCode} onChange={handleVatCountryChange} />
             {vatRate > 0 && (
               <button
@@ -253,7 +253,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             <button
               onClick={() => setShowAddProduct(true)}
               disabled={products.length >= limits.products && limits.products !== Infinity}
-              className="bg-black text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="bg-black text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
             >
               + Add Product
             </button>
@@ -261,7 +261,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-7">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-5 sm:mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
             { label: 'Changes Today', value: changedToday, sub: 'price changes', icon: '📊', highlight: changedToday > 0 },
@@ -291,7 +291,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         )}
 
         {/* View toggle + search */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-4">
           <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5">
             <button
               onClick={() => setViewMode('products')}
@@ -311,9 +311,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             placeholder={viewMode === 'products' ? 'Search products...' : 'Search competitors...'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="flex-1 max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
+            className="w-full sm:flex-1 sm:max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
           />
-          <span className="text-xs text-gray-400 ml-auto">
+          <span className="hidden sm:inline text-xs text-gray-400 sm:ml-auto">
             {viewMode === 'products' ? `${filteredProducts.length} products` : `${competitorGroups.length} competitors`}
           </span>
         </div>
@@ -342,7 +342,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     product={product}
                     isExpanded={expandedProduct === product.id}
                     onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
-                    onEditProduct={() => {}}
                     onAddCompetitor={() => setAddCompetitorFor(product.id)}
                     onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                     onRefreshCompetitor={triggerBackgroundFetch}
@@ -467,7 +466,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         )}
 
         {limits.products !== Infinity && products.length >= limits.products && (
-          <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
             <p className="text-sm text-purple-700 font-medium">You have reached your {plan} plan limit of {limits.products} products.</p>
             <button className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors">Upgrade Plan</button>
           </div>
