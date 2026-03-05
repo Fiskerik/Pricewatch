@@ -315,7 +315,8 @@ function getDomain(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
 }
 
-export async function scrapePrice(url: string): Promise<ScrapeResult> {
+// targetCurrency is accepted for API compatibility but currency is auto-detected from the page/domain
+export async function scrapePrice(url: string, targetCurrency?: string): Promise<ScrapeResult> {
   const domain = getDomain(url)
 
   // ── Step 1: domain-specific fast path ──
