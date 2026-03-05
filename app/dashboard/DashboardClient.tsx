@@ -20,6 +20,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [alerts] = useState(initialAlerts)
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null)
   const [addCompetitorFor, setAddCompetitorFor] = useState<string | null>(null)
+  const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
 
   const plan = store?.plan ?? 'free'
@@ -57,6 +58,16 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     }))
   }
 
+  const handleCompetitorDeleted = (productId: string, competitorId: string) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id !== productId) return p
+      return {
+        ...p,
+        competitor_urls: (p.competitor_urls ?? []).filter(existing => existing.id !== competitorId),
+      }
+    }))
+    setEditingCompetitor(null)
+  }
 
   const handleProductCurrencyUpdated = (productId: string, currencyCode: string) => {
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, currency_code: currencyCode } : p))
@@ -137,6 +148,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 isExpanded={expandedProduct === product.id}
                 onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
                 onAddCompetitor={() => setAddCompetitorFor(product.id)}
+                onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                 onCurrencyUpdated={handleProductCurrencyUpdated}
                 competitorLimit={limits.competitors}
               />
@@ -163,6 +175,18 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           onClose={() => setAddCompetitorFor(null)}
           onAdded={(comp) => handleCompetitorAdded(addCompetitorFor, comp)}
           onUpdated={(comp) => handleCompetitorUpdated(addCompetitorFor, comp)}
+        />
+      )}
+      {editingCompetitor && (
+        <AddCompetitorModal
+          mode="edit"
+          competitor={editingCompetitor.competitor}
+          productId={editingCompetitor.productId}
+          productCurrency={products.find(p => p.id === editingCompetitor.productId)?.currency_code ?? 'USD'}
+          onClose={() => setEditingCompetitor(null)}
+          onAdded={() => {}}
+          onUpdated={(comp) => handleCompetitorUpdated(editingCompetitor.productId, comp)}
+          onDeleted={(competitorId) => handleCompetitorDeleted(editingCompetitor.productId, competitorId)}
         />
       )}
       {showAddProduct && (

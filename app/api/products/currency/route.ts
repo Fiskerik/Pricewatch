@@ -13,14 +13,30 @@ export async function POST(req: NextRequest) {
 
   const normalizedCurrencyCode = normalizeCurrencyCode(currencyCode)
 
-  const { data: product } = await supabase
+  const { data: product, error: productError } = await supabase
     .from('products')
-    .select('id, stores!inner(user_id)')
+    .select('id, store_id')
     .eq('id', productId)
-    .eq('stores.user_id', user.id)
     .single()
 
+  if (productError) {
+    console.log('[products/currency] failed loading product', { productId, userId: user.id, error: productError.message })
+  }
+
   if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+
+  const { data: store, error: storeError } = await supabase
+    .from('stores')
+    .select('id')
+    .eq('id', product.store_id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (storeError) {
+    console.log('[products/currency] failed loading store ownership', { productId, userId: user.id, error: storeError.message })
+  }
+
+  if (!store) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
 
   const { data, error } = await supabase
     .from('products')
@@ -29,7 +45,10 @@ export async function POST(req: NextRequest) {
     .select('id, currency_code')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.log('[products/currency] update failed', { productId, userId: user.id, currencyCode: normalizedCurrencyCode, error: error.message })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 
   return NextResponse.json({ product: data })
 }
