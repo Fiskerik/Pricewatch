@@ -14,7 +14,7 @@ interface Props {
   product: Product
   isExpanded: boolean
   onToggle: () => void
-  onEditProduct: (product: Product) => void
+  onEditProduct={(p) => setEditingProduct(p)}
   onAddCompetitor: () => void
   onEditCompetitor: (competitor: CompetitorUrl) => void
   onRefreshCompetitor: (competitorId: string) => void
