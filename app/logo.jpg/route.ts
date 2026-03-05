@@ -4,7 +4,7 @@ import path from 'path'
 
 export async function GET() {
   try {
-    const logoPath = path.join(process.cwd(), 'logo.jpg')
+    const logoPath = path.join(process.cwd(), 'public', 'logo.jpg')
     const logo = await readFile(logoPath)
 
     return new NextResponse(logo, {
