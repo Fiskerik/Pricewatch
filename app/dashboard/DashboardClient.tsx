@@ -8,6 +8,11 @@ import AddCompetitorModal from '@/components/AddCompetitorModal'
 import AddProductModal from '@/components/AddProductModal'
 import AlertBadge from '@/components/AlertBadge'
 
+interface PendingPrice {
+  price: number
+  currency: string
+}
+
 interface Props {
   user: User
   store: Store | null
@@ -24,18 +29,20 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [showVat, setShowVat] = useState(true)
 
+  // Background fetch tracking
+  const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set())
+  const [pendingPrices, setPendingPrices] = useState<Map<string, PendingPrice>>(new Map())
+
   useEffect(() => {
-    const storedPreference = window.localStorage.getItem('pricewatch:showVat')
-    if (storedPreference === 'false') {
-      setShowVat(false)
-    }
+    const stored = window.localStorage.getItem('pricewatch:showVat')
+    if (stored === 'false') setShowVat(false)
   }, [])
 
   const handleVatToggle = () => {
     setShowVat(prev => {
-      const nextValue = !prev
-      window.localStorage.setItem('pricewatch:showVat', String(nextValue))
-      return nextValue
+      const next = !prev
+      window.localStorage.setItem('pricewatch:showVat', String(next))
+      return next
     })
   }
 
@@ -49,17 +56,94 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     }).length ?? 0), 0
   )
 
+  // Background price fetch — called after a competitor is added
+  const triggerBackgroundFetch = (competitorId: string) => {
+    setFetchingIds(prev => new Set([...prev, competitorId]))
+
+    fetch('/api/competitors/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ competitorId }),
+    })
+      .then(async res => {
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.competitor?.last_price !== null && data.competitor?.last_price !== undefined) {
+          // Price found — show confirmation UI
+          setPendingPrices(prev => {
+            const next = new Map(prev)
+            next.set(competitorId, {
+              price: data.competitor.last_price,
+              currency: data.competitor.last_price_currency ?? 'USD',
+            })
+            return next
+          })
+          // Also update the competitor in products list with the fetched data
+          setProducts(prev => prev.map(p => ({
+            ...p,
+            competitor_urls: (p.competitor_urls ?? []).map(c =>
+              c.id === competitorId ? { ...c, ...data.competitor } : c
+            ),
+          })))
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setFetchingIds(prev => {
+          const next = new Set(prev)
+          next.delete(competitorId)
+          return next
+        })
+      })
+  }
+
+  const handleConfirmPrice = (competitorId: string) => {
+    // Price is already saved in DB by the fetch endpoint — just dismiss the banner
+    setPendingPrices(prev => {
+      const next = new Map(prev)
+      next.delete(competitorId)
+      return next
+    })
+  }
+
+  const handleRejectPrice = async (competitorId: string, productId: string) => {
+    // User rejects the auto-fetched price — clear it in DB
+    setPendingPrices(prev => {
+      const next = new Map(prev)
+      next.delete(competitorId)
+      return next
+    })
+    // Optimistically clear the price in UI
+    setProducts(prev => prev.map(p => ({
+      ...p,
+      competitor_urls: (p.competitor_urls ?? []).map(c =>
+        c.id === competitorId ? { ...c, last_price: null, last_checked_at: null } : c
+      ),
+    })))
+    // Clear in DB via update endpoint
+    await fetch('/api/competitors/update', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ competitorId, url: products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === competitorId)?.url ?? '', updatedPrice: null }),
+    }).catch(() => {})
+  }
+
   const handleProductAdded = (product: Product) => {
     setProducts(prev => [product, ...prev])
     setShowAddProduct(false)
   }
 
   const handleCompetitorAdded = (productId: string, competitor: CompetitorUrl) => {
+    // Add to product list immediately
     setProducts(prev => prev.map(p => {
       if (p.id !== productId) return p
       return { ...p, competitor_urls: [...(p.competitor_urls ?? []), competitor] }
     }))
     setAddCompetitorFor(null)
+    // Auto-expand the product so user sees the loading state
+    setExpandedProduct(productId)
+    // Trigger background price fetch
+    triggerBackgroundFetch(competitor.id)
   }
 
   const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
@@ -67,9 +151,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       if (p.id !== productId) return p
       return {
         ...p,
-        competitor_urls: (p.competitor_urls ?? []).map(existing =>
-          existing.id === competitor.id ? competitor : existing
-        ),
+        competitor_urls: (p.competitor_urls ?? []).map(c => c.id === competitor.id ? competitor : c),
       }
     }))
   }
@@ -79,10 +161,12 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       if (p.id !== productId) return p
       return {
         ...p,
-        competitor_urls: (p.competitor_urls ?? []).filter(existing => existing.id !== competitorId),
+        competitor_urls: (p.competitor_urls ?? []).filter(c => c.id !== competitorId),
       }
     }))
     setEditingCompetitor(null)
+    setPendingPrices(prev => { const n = new Map(prev); n.delete(competitorId); return n })
+    setFetchingIds(prev => { const n = new Set(prev); n.delete(competitorId); return n })
   }
 
   const handleProductCurrencyUpdated = (productId: string, currencyCode: string) => {
@@ -110,15 +194,10 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 onClick={handleVatToggle}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showVat ? 'bg-black' : 'bg-gray-300'}`}
                 aria-pressed={showVat}
-                aria-label="Toggle VAT on prices"
-                title="Toggle VAT on prices"
               >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${showVat ? 'translate-x-5' : 'translate-x-1'}`}
-                />
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${showVat ? 'translate-x-5' : 'translate-x-1'}`} />
               </button>
             </label>
-
             <button
               onClick={() => setShowAddProduct(true)}
               disabled={products.length >= limits.products && limits.products !== Infinity}
@@ -186,12 +265,15 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 onCurrencyUpdated={handleProductCurrencyUpdated}
                 competitorLimit={limits.competitors}
                 showVat={showVat}
+                fetchingIds={fetchingIds}
+                pendingPrices={pendingPrices}
+                onConfirmPrice={handleConfirmPrice}
+                onRejectPrice={(competitorId) => handleRejectPrice(competitorId, product.id)}
               />
             ))}
           </div>
         )}
 
-        {/* Plan limit warning */}
         {limits.products !== Infinity && products.length >= limits.products && (
           <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-center justify-between">
             <p className="text-sm text-purple-700 font-medium">You've reached your {plan} plan limit of {limits.products} products.</p>
