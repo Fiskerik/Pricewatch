@@ -1,5 +1,7 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Product, CompetitorUrl } from '@/types'
 import { formatMoney, SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/currency'
+import { applyVat, detectUserCountryCode, getVatRateForCountry } from '@/lib/vat'
 
 interface Props {
   product: Product
@@ -13,12 +15,18 @@ interface Props {
 
 export default function ProductCard({ product, isExpanded, onToggle, onAddCompetitor, onEditCompetitor, onCurrencyUpdated, competitorLimit }: Props) {
   const competitors = product.competitor_urls ?? []
+  const [userCountryCode, setUserCountryCode] = useState<string | null>(null)
   const hasChanges = competitors.some(c => {
     if (!c.last_changed_at) return false
     return new Date(c.last_changed_at) > new Date(Date.now() - 86400000)
   })
   const atLimit = competitorLimit !== Infinity && competitors.length >= competitorLimit
   const productCurrency = product.currency_code ?? 'USD'
+  const vatRate = useMemo(() => getVatRateForCountry(userCountryCode), [userCountryCode])
+
+  useEffect(() => {
+    setUserCountryCode(detectUserCountryCode())
+  }, [])
 
   const handleCurrencyChange = async (currencyCode: string) => {
     const res = await fetch('/api/products/currency', {
@@ -70,7 +78,8 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
 
           {competitors.map(comp => {
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
-            const cheaper = comp.last_price !== null && product.our_price !== null && comp.last_price < product.our_price
+            const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, vatRate) : null
+            const cheaper = priceWithVat !== null && product.our_price !== null && priceWithVat < product.our_price
 
             return (
               <div key={comp.id} className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${changed ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
@@ -88,10 +97,13 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
                   ✏️
                 </button>
 
-                {comp.last_price !== null ? (
+                {priceWithVat !== null ? (
                   <div className="text-right shrink-0">
-                    <div className={`text-lg font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>{formatMoney(comp.last_price, normalizeCurrencyCode(comp.last_price_currency || productCurrency))}</div>
+                    <div className={`text-lg font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>{formatMoney(priceWithVat, normalizeCurrencyCode(comp.last_price_currency || productCurrency))}</div>
                     <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>{cheaper ? 'CHEAPER' : 'HIGHER'}</div>
+                    {vatRate > 0 && userCountryCode && (
+                      <div className="text-[10px] text-gray-400 mt-0.5">Incl. {vatRate}% VAT ({userCountryCode})</div>
+                    )}
                   </div>
                 ) : <span className="text-xs text-gray-400">Pending</span>}
               </div>
