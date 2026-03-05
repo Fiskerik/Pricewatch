@@ -17,6 +17,7 @@ interface Props {
   onEditProduct: (product: Product) => void
   onAddCompetitor: () => void
   onEditCompetitor: (competitor: CompetitorUrl) => void
+  onRefreshCompetitor: (competitorId: string) => void
   onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
   competitorLimit: number
   showVat: boolean
@@ -64,29 +65,14 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} className="overflow-visible">
-        {/* Subtle gradient fill */}
         <defs>
           <linearGradient id={`grad-${currency}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.15" />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        {/* Area fill */}
-        <polyline
-          points={`${pad},${H} ${points} ${W - pad},${H}`}
-          fill={`url(#grad-${currency})`}
-          stroke="none"
-        />
-        {/* Line */}
-        <polyline
-          points={points}
-          fill="none"
-          stroke={color}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Latest dot */}
+        <polyline points={`${pad},${H} ${points} ${W - pad},${H}`} fill={`url(#grad-${currency})`} stroke="none" />
+        <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         {(() => {
           const last = points.split(' ').at(-1)?.split(',')
           if (!last) return null
@@ -102,7 +88,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 }
 
 export default function ProductCard({
-  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor,
+  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onConfirmPrice, onRejectPrice,
 }: Props) {
@@ -140,7 +126,7 @@ export default function ProductCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm truncate">{product.title}</div>
-          <div className="text-base text-gray-500 mt-0.5 leading-tight">
+          <div className="text-sm text-gray-500 mt-0.5 leading-tight">
             {ourPrice ? `Your price: ${formatMoney(ourPrice, normalizeCurrencyCode(productCurrency))} · ` : ''}
             {competitors.length} competitor{competitors.length !== 1 ? 's' : ''} tracked
           </div>
@@ -149,10 +135,8 @@ export default function ProductCard({
           <button
             onClick={(e) => { e.stopPropagation(); onEditProduct(product) }}
             className="text-gray-400 hover:text-black transition-colors text-sm"
-            title="Edit product listing"
-          >
-            ✏️
-          </button>
+            title="Edit product"
+          >✏️</button>
           {hasFetching && (
             <span className="bg-blue-50 text-blue-600 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -195,13 +179,13 @@ export default function ProductCard({
             const cheaper = priceWithVat !== null && ourPrice !== null && priceWithVat < ourPrice
             const historyPoints = comp.price_history ?? []
             const showHistory = !!expandedHistory[comp.id]
+            const compCurrency = normalizeCurrencyCode(comp.last_price_currency || productCurrency)
 
             let hostname = comp.url
             try { hostname = new URL(comp.url).hostname } catch { /* keep raw */ }
 
             return (
               <div key={comp.id} className="space-y-1.5">
-                {/* Main competitor row */}
                 <div className={`rounded-xl border overflow-hidden ${
                   isFetching ? 'bg-blue-50 border-blue-100'
                   : changed ? 'bg-red-50 border-red-100'
@@ -229,22 +213,30 @@ export default function ProductCard({
                       </button>
                     )}
 
+                    {/* Refresh button */}
+                    <button
+                      onClick={() => onRefreshCompetitor(comp.id)}
+                      disabled={isFetching}
+                      className="text-gray-400 hover:text-black transition-colors text-sm disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Re-fetch price"
+                    >
+                      {isFetching ? (
+                        <span className="inline-block w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                      ) : '↻'}
+                    </button>
+
                     {/* Edit */}
                     <button
                       onClick={() => onEditCompetitor(comp)}
                       className="text-gray-400 hover:text-black transition-colors text-sm"
                       title="Edit competitor"
-                    >
-                      ✏️
-                    </button>
+                    >✏️</button>
 
-                    {/* Price */}
-                    {isFetching ? (
-                      <span className="inline-block w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
-                    ) : priceWithVat !== null ? (
+                    {/* Price display */}
+                    {!isFetching && priceWithVat !== null ? (
                       <div className="text-right shrink-0">
                         <div className={`text-lg font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
-                          {formatMoney(priceWithVat, normalizeCurrencyCode(comp.last_price_currency || productCurrency))}
+                          {formatMoney(priceWithVat, compCurrency)}
                         </div>
                         <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
                           {cheaper ? 'CHEAPER' : 'HIGHER'}
@@ -253,12 +245,11 @@ export default function ProductCard({
                           <div className="text-[10px] text-gray-400">{showVat ? `incl. ${vatRate}% VAT` : `excl. ${vatRate}% VAT`}</div>
                         )}
                       </div>
-                    ) : (
+                    ) : !isFetching ? (
                       <span className="text-xs text-gray-400 shrink-0">No price yet</span>
-                    )}
+                    ) : null}
                   </div>
 
-                  {/* Sparkline — inline in card */}
                   {showHistory && historyPoints.length >= 2 && (
                     <div className="px-4 pb-3 border-t border-gray-100/80">
                       <Sparkline history={historyPoints} currency={comp.last_price_currency || productCurrency} />
@@ -268,23 +259,31 @@ export default function ProductCard({
 
                 {/* Pending price confirmation */}
                 {pending && !isFetching && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-amber-700 mb-0.5">✓ Price fetched — does this look right?</div>
-                      <div className="text-lg font-extrabold text-gray-900">
-                        {formatMoney(
-                          showVat
-                            ? (pending.includesVat ? pending.price : applyVat(pending.price, vatRate))
-                            : (pending.includesVat ? removeVat(pending.price, vatRate) : pending.price),
-                          normalizeCurrencyCode(pending.currency),
-                        )}
-                        {vatRate > 0 && (
-                          <span className="text-xs font-normal text-gray-400 ml-1">
-                            {pending.includesVat ? 'includes VAT' : 'excludes VAT'}
-                          </span>
-                        )}
-                      </div>
-                      <label className="inline-flex items-center gap-2 mt-2 text-xs text-gray-700">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-amber-700 mb-1">
+                          ✓ Price fetched — does this look right?
+                          {pending.currency !== productCurrency && (
+                            <span className="ml-1 text-amber-600 font-normal">
+                              (will be converted to {productCurrency})
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-lg font-extrabold text-gray-900">
+                          {formatMoney(
+                            showVat
+                              ? (pending.includesVat ? pending.price : applyVat(pending.price, vatRate))
+                              : (pending.includesVat ? removeVat(pending.price, vatRate) : pending.price),
+                            normalizeCurrencyCode(pending.currency),
+                          )}
+                          {vatRate > 0 && (
+                            <span className="text-xs font-normal text-gray-400 ml-1">
+                              {pending.includesVat ? 'includes VAT' : 'excludes VAT'}
+                            </span>
+                          )}
+                        </div>
+                        <label className="inline-flex items-center gap-2 mt-1.5 text-xs text-gray-700 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={pending.includesVat}
@@ -293,20 +292,17 @@ export default function ProductCard({
                           />
                           VAT included in fetched price
                         </label>
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        onClick={() => onRejectPrice(comp.id)}
-                        className="text-xs font-semibold text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        ✕ Wrong
-                      </button>
-                      <button
-                        onClick={() => onConfirmPrice(comp.id, pending.includesVat)}
-                        className="text-xs font-semibold text-white bg-black px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
-                      >
-                        ✓ Correct
-                      </button>
+                      </div>
+                      <div className="flex gap-2 shrink-0 self-start">
+                        <button
+                          onClick={() => onRejectPrice(comp.id)}
+                          className="text-xs font-semibold text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                        >✕ Wrong</button>
+                        <button
+                          onClick={() => onConfirmPrice(comp.id, pending.includesVat)}
+                          className="text-xs font-semibold text-white bg-black px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+                        >✓ Correct</button>
+                      </div>
                     </div>
                   </div>
                 )}
