@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 
   const { data: competitorWithOwner } = await supabase
     .from('competitor_urls')
-    .select('id, url, last_price, products!inner(id, stores!inner(user_id))')
+    .select('id, url, last_price, products!inner(id, currency_code, stores!inner(user_id))')
     .eq('id', competitorId)
     .eq('products.stores.user_id', user.id)
     .single()
@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString()
 
   try {
-    const result = await scrapePrice(competitorWithOwner.url)
+    const targetCurrency = (competitorWithOwner as any)?.products?.currency_code ?? 'USD'
+    const result = await scrapePrice(competitorWithOwner.url, targetCurrency)
     const updatePayload: Record<string, unknown> = {
       last_checked_at: now,
     }

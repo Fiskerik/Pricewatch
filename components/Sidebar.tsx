@@ -1,5 +1,6 @@
 'use client'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter } from 'next/navigation'
@@ -36,7 +37,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
       {/* Logo */}
       <div className="px-5 pb-5 border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-black rounded-md flex items-center justify-center text-white font-bold text-sm">⚡</div>
+          <Image src="/logo.jpg" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
           <span className="font-bold text-sm">PriceWatch</span>
         </Link>
       </div>

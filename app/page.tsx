@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 export default function LandingPage() {
   return (
@@ -7,7 +8,7 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="flex justify-between items-center px-8 py-5 border-b border-gray-100 max-w-6xl mx-auto">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-black rounded-md flex items-center justify-center text-white text-sm font-bold">⚡</div>
+          <Image src="/logo.jpg" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
           <span className="font-bold text-base">PriceWatch</span>
         </div>
         <div className="flex items-center gap-6">

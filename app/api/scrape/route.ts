@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { url } = await req.json()
+  const { url, targetCurrency } = await req.json()
   if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 })
 
   try {
@@ -18,6 +18,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
 
-  const result = await scrapePrice(url)
+  const result = await scrapePrice(url, targetCurrency)
   return NextResponse.json(result)
 }
