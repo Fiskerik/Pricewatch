@@ -1,26 +1,29 @@
 /**
- * scraper.ts — Price scraper with Komplett/Cloudflare bypass
+ * scraper.ts — Price scraper with per-domain strategies
  *
- * Strategy:
- *  1. Direct fetch with full browser headers (works for most sites)
- *  2. ScraperAPI with JS rendering (handles Cloudflare + JS-rendered prices)
+ * Problem sites:
+ *  - power.se   → Next.js SSR, price in JS bundle / internal API
+ *  - komplett.se → Cloudflare + JS-rendered price
+ *  - Most Nordic retailers → similar pattern
  *
- * Komplett.se specifics:
- *  - Product page HTML *does* contain price in og:price:amount meta tag
- *  - But Cloudflare 403s plain fetch → need realistic headers or ScraperAPI
- *  - Price is also in JSON-LD as "offers.price"
+ * Strategy per site:
+ *  1. Domain-specific API handler (fastest, most reliable)
+ *  2. Direct fetch with browser headers + HTML parsing
+ *  3. ScraperAPI with JS rendering (fallback, handles everything)
  */
 
 export type CurrencyCode = string
 
+// ─────────────────────────────────────────────────────────────
+// HTML price extraction helpers
+// ─────────────────────────────────────────────────────────────
+
 const PRICE_SELECTORS = [
-  // JSON-LD handled first (most reliable)
   'meta[property="og:price:amount"]',
   'meta[property="product:price:amount"]',
   '[itemprop="price"]',
   '[data-product-price]',
   '[data-price]',
-  // Komplett / Nordic e-commerce
   '.product-price-now',
   '.product-price__value',
   '.product__price-now',
@@ -28,12 +31,10 @@ const PRICE_SELECTORS = [
   '[class*="priceNow"]',
   '[class*="PriceNow"]',
   '.product-price',
-  // Shopify
   '.product__price',
   '.price__regular',
   '.price-item--regular',
   '[class*="product-price"]',
-  // Generic
   'span.price',
   '.price',
   '[class*="price"]',
@@ -67,8 +68,8 @@ function detectCurrency(raw: string, url: string): CurrencyCode {
 
 function parsePriceText(raw: string): number | null {
   const cleaned = raw
-    .replace(/\u00a0/g, ' ')   // non-breaking space
-    .replace(/\u202f/g, ' ')   // narrow no-break space (Komplett uses this: "1\u202f499")
+    .replace(/\u00a0/g, ' ')
+    .replace(/\u202f/g, ' ')   // narrow no-break space (used by Komplett, Power)
     .replace(/\s+/g, '')
     .replace(/[^\d,\.]/g, '')
 
@@ -79,10 +80,8 @@ function parsePriceText(raw: string): number | null {
 
   let normalized = cleaned
   if (lastComma > lastDot) {
-    // European: 1.499,00 → 1499.00
     normalized = normalized.replace(/\./g, '').replace(',', '.')
   } else {
-    // US: 1,499.00 → 1499.00
     normalized = normalized.replace(/,/g, '')
   }
 
@@ -92,23 +91,18 @@ function parsePriceText(raw: string): number | null {
 }
 
 const SKIP_HINTS = ['shipping', 'frakt', 'delivery', 'rating', 'rabatt', 'discount', 'kvar', 'stock']
-
 function looksLikeNonProductPrice(raw: string): boolean {
-  const lowered = raw.toLowerCase()
-  return SKIP_HINTS.some(t => lowered.includes(t))
+  return SKIP_HINTS.some(t => raw.toLowerCase().includes(t))
 }
-
-// ---------------------------------------------------------------------------
 
 async function extractPriceFromHtml(
   html: string,
   url: string,
 ): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
-  // Dynamic import of cheerio — only available server-side
   const { load } = await import('cheerio')
   const $ = load(html)
 
-  // 1. JSON-LD (most reliable for most sites)
+  // 1. JSON-LD
   for (const script of $('script[type="application/ld+json"]').toArray()) {
     try {
       const raw = $(script).contents().text()
@@ -119,13 +113,12 @@ async function extractPriceFromHtml(
         const offer = offerRaw?.price != null ? offerRaw : Array.isArray(offerRaw) ? offerRaw[0] : null
         const amount = offer?.price != null ? parseFloat(String(offer.price)) : null
         if (!amount || Number.isNaN(amount) || amount <= 0) continue
-        const currency = offer?.priceCurrency ?? detectCurrency(raw, url)
-        return { price: amount, scrapedCurrency: currency }
+        return { price: amount, scrapedCurrency: offer?.priceCurrency ?? detectCurrency(raw, url) }
       }
     } catch { /* malformed */ }
   }
 
-  // 2. og:price meta (Komplett does set these, just behind Cloudflare)
+  // 2. og/product meta price
   const ogPrice = $('meta[property="og:price:amount"]').attr('content')
     ?? $('meta[property="product:price:amount"]').attr('content')
   const ogCurrency = $('meta[property="og:price:currency"]').attr('content')
@@ -141,11 +134,7 @@ async function extractPriceFromHtml(
   for (const selector of PRICE_SELECTORS) {
     for (const el of $(selector).toArray()) {
       const node = $(el)
-      const content =
-        node.attr('content') ??
-        node.attr('data-product-price') ??
-        node.attr('data-price') ??
-        node.text()
+      const content = node.attr('content') ?? node.attr('data-product-price') ?? node.attr('data-price') ?? node.text()
       const raw = content.trim()
       if (!raw || looksLikeNonProductPrice(raw)) continue
       const amount = parsePriceText(raw)
@@ -154,20 +143,126 @@ async function extractPriceFromHtml(
     }
   }
 
-  // 4. Regex last resort — find first plausible price in page
-  const matches = Array.from(html.matchAll(
-    /(?:price["\s:]+|"price":\s*)([\d]{1,3}(?:[\s.,\u00a0\u202f]\d{3})*(?:[.,]\d{2})?)/gi
-  ))
-  for (const match of matches) {
-    if (looksLikeNonProductPrice(match[0])) continue
-    const amount = parsePriceText(match[1])
-    if (amount) return { price: amount, scrapedCurrency: detectCurrency(match[0], url) }
+  // 4. JSON blob in __NEXT_DATA__ or window.__INITIAL_STATE__ etc
+  const nextData = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i)
+  if (nextData) {
+    try {
+      const json = JSON.parse(nextData[1])
+      const str = JSON.stringify(json)
+      // Look for price fields
+      const priceMatch = str.match(/"(?:price|currentPrice|salesPrice|priceIncVat|priceExVat|listPrice)":\s*([\d]+(?:\.\d+)?)/i)
+      if (priceMatch) {
+        const amount = parseFloat(priceMatch[1])
+        if (!isNaN(amount) && amount > 0) {
+          return { price: amount, scrapedCurrency: detectCurrency('', url) }
+        }
+      }
+    } catch { /* malformed */ }
+  }
+
+  // 5. Regex over price-like JSON values in script tags
+  const scriptPriceMatch = html.match(/"(?:price|currentPrice|salesPrice|priceIncVat)":\s*([\d]{2,7}(?:\.\d{1,2})?)/i)
+  if (scriptPriceMatch) {
+    const amount = parseFloat(scriptPriceMatch[1])
+    if (!isNaN(amount) && amount > 0) {
+      return { price: amount, scrapedCurrency: detectCurrency('', url) }
+    }
   }
 
   return { price: null, scrapedCurrency: null }
 }
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────
+// Domain-specific handlers — hit internal APIs directly
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * power.se internal product API
+ * Product pages: /.../.../p-{ID}/
+ * Internal API:  /api/products/{ID}  (returns JSON with price)
+ */
+async function scrapePowerSe(url: string): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
+  // Extract product ID: p-4125288
+  const idMatch = url.match(/\/(p-\d+)\/?/i)
+  if (!idMatch) throw new Error('Could not extract product ID from power.se URL')
+
+  const productId = idMatch[1].replace('p-', '') // → "4125288"
+  const apiUrl = `https://www.power.se/api/products/${productId}`
+
+  const res = await fetch(apiUrl, {
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Referer': 'https://www.power.se/',
+    },
+  })
+
+  if (!res.ok) throw new Error(`power.se API HTTP ${res.status}`)
+
+  const data = await res.json()
+
+  // Try multiple known price field names in their API response
+  const priceFields = [
+    data?.price,
+    data?.currentPrice,
+    data?.salesPrice,
+    data?.priceIncVat,
+    data?.product?.price,
+    data?.product?.currentPrice,
+    data?.product?.priceIncVat,
+    data?.data?.price,
+    data?.data?.currentPrice,
+  ]
+
+  for (const field of priceFields) {
+    if (field != null) {
+      const amount = parseFloat(String(field))
+      if (!isNaN(amount) && amount > 0) {
+        return { price: amount, scrapedCurrency: 'SEK' }
+      }
+    }
+  }
+
+  // Fallback: stringify and regex-search the JSON
+  const str = JSON.stringify(data)
+  const match = str.match(/"(?:price|currentPrice|salesPrice|priceIncVat)":\s*([\d]{2,7}(?:\.\d{1,2})?)/i)
+  if (match) {
+    const amount = parseFloat(match[1])
+    if (!isNaN(amount) && amount > 0) {
+      return { price: amount, scrapedCurrency: 'SEK' }
+    }
+  }
+
+  throw new Error('Price not found in power.se API response')
+}
+
+/**
+ * komplett.se — Cloudflare protected, try direct with browser headers first
+ * Their price is in og:price:amount AND JSON-LD — both work once we get past CF
+ */
+async function scrapeKomplettSe(url: string): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
+  // komplett.se does respond to direct fetch with correct headers (no JS needed for price)
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(12_000),
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'sv-SE,sv;q=0.9',
+      'Cache-Control': 'no-cache',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+    },
+  })
+  if (!res.ok) throw new Error(`komplett.se HTTP ${res.status}`)
+  const html = await res.text()
+  return extractPriceFromHtml(html, url)
+}
+
+// ─────────────────────────────────────────────────────────────
+// Generic strategies
+// ─────────────────────────────────────────────────────────────
 
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -175,32 +270,29 @@ const BROWSER_HEADERS = {
   'Accept-Language': 'sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7',
   'Accept-Encoding': 'gzip, deflate, br',
   'Cache-Control': 'no-cache',
-  'Pragma': 'no-cache',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
   'Sec-Fetch-Site': 'none',
-  'Sec-Ch-Ua': '"Chromium";v="122", "Google Chrome";v="122"',
   'Upgrade-Insecure-Requests': '1',
 }
 
 async function scrapeDirectly(url: string) {
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(12_000),
-    headers: BROWSER_HEADERS,
-  })
+  const res = await fetch(url, { signal: AbortSignal.timeout(12_000), headers: BROWSER_HEADERS })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const html = await res.text()
+  // If page body is basically empty (JS-rendered), don't waste time parsing
+  if (html.length < 5000 && !html.includes('price')) throw new Error('Empty/JS-only page')
   return extractPriceFromHtml(html, url)
 }
 
 async function scrapeViaScraperApi(url: string) {
-  if (!process.env.SCRAPER_API_KEY) throw new Error('No SCRAPER_API_KEY')
+  if (!process.env.SCRAPER_API_KEY) throw new Error('No SCRAPER_API_KEY configured')
 
   const apiUrl = new URL('http://api.scraperapi.com')
   apiUrl.searchParams.set('api_key', process.env.SCRAPER_API_KEY)
   apiUrl.searchParams.set('url', url)
-  apiUrl.searchParams.set('render', 'true')   // JS rendering — catches Vue/React prices
-  apiUrl.searchParams.set('country_code', 'se') // Swedish IP — important for Nordic prices
+  apiUrl.searchParams.set('render', 'true')
+  apiUrl.searchParams.set('country_code', 'se')
 
   const res = await fetch(apiUrl.toString(), { signal: AbortSignal.timeout(35_000) })
   if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`)
@@ -208,33 +300,50 @@ async function scrapeViaScraperApi(url: string) {
   return extractPriceFromHtml(html, url)
 }
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────
+// Main export
+// ─────────────────────────────────────────────────────────────
 
 export interface ScrapeResult {
   price: number | null
   scrapedCurrency: CurrencyCode | null
-  method: 'direct' | 'scraperapi' | 'failed'
+  method: 'domain-api' | 'direct' | 'scraperapi' | 'failed'
   error?: string
 }
 
-export async function scrapePrice(url: string, targetCurrency?: CurrencyCode): Promise<ScrapeResult> {
-  // Try direct first
+function getDomain(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
+}
+
+export async function scrapePrice(url: string): Promise<ScrapeResult> {
+  const domain = getDomain(url)
+
+  // ── Step 1: domain-specific fast path ──
+  try {
+    if (domain === 'power.se') {
+      const result = await scrapePowerSe(url)
+      if (result.price !== null) return { ...result, method: 'domain-api' }
+    }
+    if (domain === 'komplett.se') {
+      const result = await scrapeKomplettSe(url)
+      if (result.price !== null) return { ...result, method: 'direct' }
+    }
+  } catch (err) {
+    console.warn(`[scraper] domain handler failed for ${domain}: ${String(err)}`)
+  }
+
+  // ── Step 2: generic direct fetch ──
   try {
     const result = await scrapeDirectly(url)
-    if (result.price !== null) {
-      return { ...result, scrapedCurrency: result.scrapedCurrency ?? targetCurrency ?? null, method: 'direct' }
-    }
-    // Got HTML but no price — fall through to ScraperAPI (JS rendering needed)
+    if (result.price !== null) return { ...result, method: 'direct' }
   } catch (err) {
     console.warn(`[scraper] direct failed for ${url}: ${String(err)}`)
   }
 
-  // ScraperAPI fallback
+  // ── Step 3: ScraperAPI with JS rendering ──
   try {
     const result = await scrapeViaScraperApi(url)
-    if (result.price !== null) {
-      return { ...result, scrapedCurrency: result.scrapedCurrency ?? targetCurrency ?? null, method: 'scraperapi' }
-    }
+    if (result.price !== null) return { ...result, method: 'scraperapi' }
   } catch (err) {
     return { price: null, scrapedCurrency: null, method: 'failed', error: String(err) }
   }
