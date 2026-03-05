@@ -1,22 +1,3 @@
-/**
- * scraper.ts — Price scraper with JS-rendering support
- *
- * JS-rendered sites (Power.se, Elgiganten, etc.) return an empty HTML shell
- * from plain fetch(). The price is loaded via XHR/fetch in the browser AFTER
- * the JS bundle runs. To get the price you need either:
- *   A) Hit their internal JSON/API endpoint directly (fastest, fragile)
- *   B) Use a headless browser service that renders the JS first
- *
- * Provider priority:
- *   1. ScraperAPI     — SCRAPER_API_KEY       (scraperapi.com, 1000 free/mo)
- *   2. Browserless    — BROWSERLESS_API_KEY   (browserless.io, 1000 free/mo)
- *   3. ZenRows        — ZENROWS_API_KEY       (zenrows.com, 1000 free/mo)
- *   → Set ANY ONE of these in Vercel env vars to enable JS rendering.
- *
- * For sites that work without JS rendering (Komplett, most Shopify stores),
- * direct fetch is tried first and is much faster.
- */
-
 export type CurrencyCode = string
 
 // ─── Price text parsing ───────────────────────────────────────────────────────
