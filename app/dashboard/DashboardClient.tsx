@@ -177,20 +177,20 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div className="flex min-h-screen bg-gray-50 text-gray-900 lg:items-stretch" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
-      <main className="flex-1 p-8 overflow-y-auto max-h-screen">
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto lg:max-h-screen">
 
         {/* Header */}
-        <div className="flex justify-between items-start mb-7">
+        <div className="flex flex-col gap-4 sm:gap-5 lg:flex-row lg:justify-between lg:items-start mb-7">
           <div>
             <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
             <p className="text-sm text-gray-400 mt-0.5">
               Checks run {limits.checkFrequency} · {products.length} products · {totalCompetitors} URLs tracked
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <VatCountrySelector countryCode={vatCountryCode} onChange={handleVatCountryChange} />
             {vatRate > 0 && (
               <button
@@ -212,7 +212,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-7">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
             { label: 'Changes Today', value: changedToday, sub: 'price changes', icon: '📊', highlight: changedToday > 0 },
@@ -242,17 +242,17 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         )}
 
         {/* View toggle + search */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5 w-full sm:w-auto">
             <button
               onClick={() => setViewMode('products')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'products' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'products' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
             >
               Products
             </button>
             <button
               onClick={() => setViewMode('competitors')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'competitors' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'competitors' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
             >
               By Competitor
             </button>
@@ -262,9 +262,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             placeholder={viewMode === 'products' ? 'Search products...' : 'Search competitors...'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="flex-1 max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
+            className="w-full sm:flex-1 sm:max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
           />
-          <span className="text-xs text-gray-400 ml-auto">
+          <span className="text-xs text-gray-400 sm:ml-auto">
             {viewMode === 'products' ? `${filteredProducts.length} products` : `${competitorGroups.length} competitors`}
           </span>
         </div>
@@ -330,7 +330,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     <div key={group.domain} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                       <button
                         onClick={() => setExpandedDomain(isOpen ? null : group.domain)}
-                        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+                        className="w-full flex items-start sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 text-left hover:bg-gray-50 transition-colors"
                       >
                         <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                           <img
@@ -354,14 +354,14 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
                           {anyChanged && <span className="bg-red-50 text-red-600 text-xs font-semibold px-2.5 py-1 rounded-full">Changed!</span>}
                           <span className="text-gray-300 text-sm">{isOpen ? '▲' : '▼'}</span>
                         </div>
                       </button>
 
                       {isOpen && (
-                        <div className="border-t border-gray-100 px-5 pb-4 pt-3 space-y-2">
+                        <div className="border-t border-gray-100 px-4 sm:px-5 pb-4 pt-3 space-y-2">
                           {group.entries.map(({ comp, product }) => {
                             const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, showVat ? vatRate : 0) : null
                             const productPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
@@ -369,10 +369,10 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                             const currency = normalizeCurrencyCode(comp.last_price_currency ?? product.currency_code ?? 'USD')
 
                             return (
-                              <div key={comp.id} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+                              <div key={comp.id} className="flex flex-wrap sm:flex-nowrap items-center gap-3 bg-gray-50 border border-gray-100 rounded-xl px-3 sm:px-4 py-3">
                                 <div className="flex-1 min-w-0">
                                   <div className="text-xs font-semibold text-gray-500 mb-0.5 truncate">{product.title}</div>
-                                  <a href={comp.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block max-w-sm">
+                                  <a href={comp.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block max-w-full sm:max-w-sm">
                                     {comp.label || comp.url}
                                   </a>
                                 </div>
@@ -383,7 +383,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                                   ✏️
                                 </button>
                                 {priceWithVat !== null ? (
-                                  <div className="text-right shrink-0">
+                                  <div className="text-right shrink-0 ml-auto">
                                     <div className={`text-base font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
                                       {formatMoney(priceWithVat, currency)}
                                     </div>
@@ -407,7 +407,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         )}
 
         {limits.products !== Infinity && products.length >= limits.products && (
-          <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:justify-between">
             <p className="text-sm text-purple-700 font-medium">You have reached your {plan} plan limit of {limits.products} products.</p>
             <button className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors">Upgrade Plan</button>
           </div>
