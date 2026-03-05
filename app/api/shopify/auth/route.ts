@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
   const { data: { user } } = await supabase.auth.getUser()
@@ -15,15 +17,20 @@ export async function GET(req: NextRequest) {
   }
 
   // Build Shopify OAuth URL manually
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
   const apiKey = process.env.SHOPIFY_API_KEY!
   const scopes = 'read_products'
-  const redirectUri = `${appUrl}/api/shopify/callback`
+  const appOrigin = appUrl ? new URL(appUrl).origin : req.nextUrl.origin
+  const redirectUri = `${appOrigin}/api/shopify/callback`
   
   // Generate random state for CSRF protection
   const state = Math.random().toString(36).substring(7)
   
   // Store state in cookie for verification in callback
+  console.log('[Shopify Auth] appUrl:', appUrl)
+  console.log('[Shopify Auth] appOrigin:', appOrigin)
+  console.log('[Shopify Auth] redirectUri:', redirectUri)
+
   const response = NextResponse.redirect(
     `https://${shop}/admin/oauth/authorize?` +
     `client_id=${apiKey}&` +
@@ -31,8 +38,6 @@ export async function GET(req: NextRequest) {
     `redirect_uri=${encodeURIComponent(redirectUri)}&` +
     `state=${state}`
   )
-  console.log('[Shopify Auth] appUrl:', appUrl)
-  console.log('[Shopify Auth] redirectUri:', redirectUri)
   
   response.cookies.set('shopify_oauth_state', state, {
     httpOnly: true,
