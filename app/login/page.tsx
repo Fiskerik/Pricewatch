@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Link from 'next/link'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const supabase = createClientComponentClient()
@@ -37,7 +38,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-8">
-            <div className="w-7 h-7 bg-black rounded-md flex items-center justify-center text-white font-bold">⚡</div>
+            <Image src="/logo.jpg" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
             <span className="font-bold">PriceWatch</span>
           </Link>
           <h1 className="text-2xl font-extrabold tracking-tight">Welcome back</h1>

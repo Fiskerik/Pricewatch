@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const { data: competitors, error } = await admin
     .from('competitor_urls')
     .select(`
-      id, url, label, last_price,
+      id, url, label, last_price, last_price_currency,
       products (
         id, title, our_price, currency_code,
         stores (
@@ -52,7 +52,8 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      const { price } = await scrapePrice(comp.url, product?.currency_code ?? 'USD')
+      const { price, scrapedCurrency } = await scrapePrice(comp.url, product?.currency_code ?? 'USD')
+      console.log('[cron] scrape result', { competitorId: comp.id, url: comp.url, price, scrapedCurrency })
       results.checked++
 
       // Update last_checked_at regardless
@@ -81,7 +82,7 @@ export async function GET(req: NextRequest) {
         // Update last_price + last_changed_at
         await admin
           .from('competitor_urls')
-          .update({ last_price: price, last_changed_at: now })
+          .update({ last_price: price, last_price_currency: scrapedCurrency, last_changed_at: now })
           .eq('id', comp.id)
 
         // Send email alert
@@ -110,7 +111,7 @@ export async function GET(req: NextRequest) {
         // First check — just save the price, no alert
         await admin
           .from('competitor_urls')
-          .update({ last_price: price })
+          .update({ last_price: price, last_price_currency: scrapedCurrency })
           .eq('id', comp.id)
       }
 

@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 
   const { data: competitorWithOwner } = await supabase
     .from('competitor_urls')
-    .select('id, url, last_price, products!inner(id, currency_code, stores!inner(user_id))')
+    .select('id, url, last_price, last_price_currency, products!inner(id, currency_code, stores!inner(user_id))')
     .eq('id', competitorId)
     .eq('products.stores.user_id', user.id)
     .single()
@@ -27,12 +27,14 @@ export async function POST(req: NextRequest) {
   try {
     const targetCurrency = (competitorWithOwner as any)?.products?.currency_code ?? 'USD'
     const result = await scrapePrice(competitorWithOwner.url, targetCurrency)
+    console.log('[competitors/fetch] scrape result', { competitorId, url: competitorWithOwner.url, price: result.price, scrapedCurrency: result.scrapedCurrency })
     const updatePayload: Record<string, unknown> = {
       last_checked_at: now,
     }
 
     if (result.price !== null) {
       updatePayload.last_price = result.price
+      if (result.scrapedCurrency) updatePayload.last_price_currency = result.scrapedCurrency
 
       const oldPrice = competitorWithOwner.last_price ? Number(competitorWithOwner.last_price) : null
       if (oldPrice !== null && Math.abs(result.price - oldPrice) > 0.005) {
