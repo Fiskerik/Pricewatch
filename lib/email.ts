@@ -1,7 +1,12 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM = process.env.EMAIL_FROM || 'alerts@pricewatch.app'
+
+const getResendClient = () => {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) throw new Error('RESEND_API_KEY is required to send email alerts.')
+  return new Resend(apiKey)
+}
 
 interface PriceAlertParams {
   to: string
@@ -67,6 +72,8 @@ export async function sendPriceAlert(params: PriceAlertParams) {
     </body>
     </html>
   `
+
+  const resend = getResendClient()
 
   return resend.emails.send({
     from: FROM,

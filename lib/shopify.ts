@@ -1,17 +1,33 @@
 import { shopifyApi, LATEST_API_VERSION, Session } from '@shopify/shopify-api'
 import '@shopify/shopify-api/adapters/node'
 
-export const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY!,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET!,
-  scopes: ['read_products'],
-  hostName: new URL(process.env.NEXT_PUBLIC_APP_URL!).hostname,
-  apiVersion: LATEST_API_VERSION,
-  isEmbeddedApp: false,
-})
+let shopifyClient: ReturnType<typeof shopifyApi> | null = null
+
+export const getShopifyClient = () => {
+  if (shopifyClient) return shopifyClient
+
+  const apiKey = process.env.SHOPIFY_API_KEY
+  const apiSecretKey = process.env.SHOPIFY_API_SECRET
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+
+  if (!apiKey || !apiSecretKey || !appUrl) {
+    throw new Error('Missing Shopify configuration: SHOPIFY_API_KEY, SHOPIFY_API_SECRET, and NEXT_PUBLIC_APP_URL are required.')
+  }
+
+  shopifyClient = shopifyApi({
+    apiKey,
+    apiSecretKey,
+    scopes: ['read_products'],
+    hostName: new URL(appUrl).hostname,
+    apiVersion: LATEST_API_VERSION,
+    isEmbeddedApp: false,
+  })
+
+  return shopifyClient
+}
 
 export async function getShopifyProducts(shop: string, accessToken: string) {
-  const client = new shopify.clients.Rest({
+  const client = new (getShopifyClient()).clients.Rest({
     session: new Session({
       id: `${shop}_session`,
       shop,

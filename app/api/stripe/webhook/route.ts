@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { stripe } from '@/lib/stripe'
+import { getStripeClient } from '@/lib/stripe'
 import { supabaseAdmin } from '@/lib/supabase'
 import Stripe from 'stripe'
 
@@ -9,12 +9,12 @@ export async function POST(req: NextRequest) {
 
   let event: Stripe.Event
   try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!)
+    event = getStripeClient().webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!)
   } catch {
     return NextResponse.json({ error: 'Webhook signature failed' }, { status: 400 })
   }
 
-  const planFromPriceId = (priceId: string) => {
+  const planFromPriceId = (priceId?: string) => {
     if (priceId === process.env.STRIPE_PRO_PRICE_ID) return 'pro'
     if (priceId === process.env.STRIPE_BUSINESS_PRICE_ID) return 'business'
     return 'free'
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       const userId = session.metadata?.userId
       if (!userId) break
 
-      await supabaseAdmin
+      await supabaseAdmin()
         .from('stores')
         .update({
           stripe_customer_id: session.customer as string,
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
       const priceId = sub.items.data[0]?.price.id
       const plan = planFromPriceId(priceId)
 
-      await supabaseAdmin
+      await supabaseAdmin()
         .from('stores')
         .update({ plan, stripe_subscription_id: sub.id })
         .eq('stripe_customer_id', sub.customer as string)
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     case 'customer.subscription.deleted': {
       const sub = event.data.object as Stripe.Subscription
-      await supabaseAdmin
+      await supabaseAdmin()
         .from('stores')
         .update({ plan: 'free', stripe_subscription_id: null })
         .eq('stripe_customer_id', sub.customer as string)

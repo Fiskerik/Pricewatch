@@ -13,11 +13,12 @@ export async function GET(req: NextRequest) {
 
   const now = new Date().toISOString()
   const results = { checked: 0, changed: 0, failed: 0, errors: [] as string[] }
+  const admin = supabaseAdmin() as any
 
   // Fetch all active competitor URLs that are due for a check
   // Free plan: daily = checked > 24h ago (or never)
   // Pro/Business: hourly = checked > 1h ago (or never)
-  const { data: competitors, error } = await supabaseAdmin
+  const { data: competitors, error } = await admin
     .from('competitor_urls')
     .select(`
       id, url, label, last_price,
@@ -37,7 +38,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'DB error', details: error?.message }, { status: 500 })
   }
 
-  for (const comp of competitors) {
+  const competitorList = competitors as any[]
+
+  for (const comp of competitorList) {
     const product = comp.products as any
     const store = product?.stores as any
     const plan = store?.plan ?? 'free'
@@ -49,11 +52,11 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      const { price, method } = await scrapePrice(comp.url)
+      const { price } = await scrapePrice(comp.url)
       results.checked++
 
       // Update last_checked_at regardless
-      await supabaseAdmin
+      await admin
         .from('competitor_urls')
         .update({ last_checked_at: now })
         .eq('id', comp.id)
@@ -64,7 +67,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Record in history
-      await supabaseAdmin.from('price_history').insert({
+      await admin.from('price_history').insert({
         competitor_url_id: comp.id,
         price,
         checked_at: now,
@@ -76,7 +79,7 @@ export async function GET(req: NextRequest) {
         results.changed++
 
         // Update last_price + last_changed_at
-        await supabaseAdmin
+        await admin
           .from('competitor_urls')
           .update({ last_price: price, last_changed_at: now })
           .eq('id', comp.id)
@@ -94,7 +97,7 @@ export async function GET(req: NextRequest) {
               ourPrice: product.our_price ?? 0,
             })
 
-            await supabaseAdmin.from('alerts_sent').insert({
+            await admin.from('alerts_sent').insert({
               competitor_url_id: comp.id,
               old_price: oldPrice,
               new_price: price,
@@ -105,7 +108,7 @@ export async function GET(req: NextRequest) {
         }
       } else if (oldPrice === null) {
         // First check — just save the price, no alert
-        await supabaseAdmin
+        await admin
           .from('competitor_urls')
           .update({ last_price: price })
           .eq('id', comp.id)
