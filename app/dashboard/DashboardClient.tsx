@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { User } from '@supabase/supabase-js'
 import { Store, Product, CompetitorUrl, PLAN_LIMITS } from '@/types'
 import Sidebar from '@/components/Sidebar'
@@ -7,11 +7,12 @@ import ProductCard from '@/components/ProductCard'
 import AddCompetitorModal from '@/components/AddCompetitorModal'
 import AddProductModal from '@/components/AddProductModal'
 import AlertBadge from '@/components/AlertBadge'
+import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/components/VatCountrySelector'
+import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
+import { applyVat } from '@/lib/vat'
 
-interface PendingPrice {
-  price: number
-  currency: string
-}
+interface PendingPrice { price: number; currency: string }
+type ViewMode = 'products' | 'competitors'
 
 interface Props {
   user: User
@@ -27,23 +28,39 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [addCompetitorFor, setAddCompetitorFor] = useState<string | null>(null)
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
+
+  // VAT state lifted up — avoids flash-of-no-VAT in ProductCard
+  const [vatCountryCode, setVatCountryCode] = useState<string>('SE')
+  const [vatRate, setVatRate] = useState<number>(25)
   const [showVat, setShowVat] = useState(true)
 
-  // Plain objects avoid TS Set/Map downlevelIteration errors
+  // View + filter
+  const [viewMode, setViewMode] = useState<ViewMode>('products')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedDomain, setExpandedDomain] = useState<string | null>(null)
+
+  // Background fetch
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
 
   useEffect(() => {
-    const stored = window.localStorage.getItem('pricewatch:showVat')
-    if (stored === 'false') setShowVat(false)
+    const storedCountry = window.localStorage.getItem('pricewatch:vatCountry')
+    const code = storedCountry ?? detectCountryCode()
+    const country = VAT_COUNTRIES.find(c => c.code === code) ?? VAT_COUNTRIES.find(c => c.code === 'SE')!
+    setVatCountryCode(country.code)
+    setVatRate(country.rate)
+
+    const storedVat = window.localStorage.getItem('pricewatch:showVat')
+    if (storedVat === 'false') setShowVat(false)
   }, [])
 
-  const handleVatToggle = () => {
-    setShowVat(prev => {
-      const next = !prev
-      window.localStorage.setItem('pricewatch:showVat', String(next))
-      return next
-    })
+  const handleVatCountryChange = (code: string, rate: number) => {
+    setVatCountryCode(code)
+    setVatRate(rate)
+    window.localStorage.setItem('pricewatch:vatCountry', code)
+    const next = rate > 0
+    setShowVat(next)
+    window.localStorage.setItem('pricewatch:showVat', String(next))
   }
 
   const plan = store?.plan ?? 'free'
@@ -56,9 +73,32 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     }).length ?? 0), 0
   )
 
+  const competitorGroups = useMemo(() => {
+    const groups: Record<string, { domain: string; entries: { comp: CompetitorUrl; product: Product }[] }> = {}
+    for (const product of products) {
+      for (const comp of product.competitor_urls ?? []) {
+        let domain = comp.url
+        try { domain = new URL(comp.url).hostname.replace(/^www\./, '') } catch { /* keep raw */ }
+        if (!groups[domain]) groups[domain] = { domain, entries: [] }
+        groups[domain].entries.push({ comp, product })
+      }
+    }
+    return Object.values(groups).sort((a, b) => b.entries.length - a.entries.length)
+  }, [products])
+
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery.trim()) return products
+    const q = searchQuery.toLowerCase()
+    return products.filter(p =>
+      p.title.toLowerCase().includes(q) ||
+      (p.competitor_urls ?? []).some(c =>
+        (c.label ?? '').toLowerCase().includes(q) || c.url.toLowerCase().includes(q)
+      )
+    )
+  }, [products, searchQuery])
+
   const triggerBackgroundFetch = (competitorId: string) => {
     setFetchingIds(prev => ({ ...prev, [competitorId]: true }))
-
     fetch('/api/competitors/fetch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -68,62 +108,43 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         if (!res.ok) return
         const data = await res.json()
         const comp = data.competitor
-        if (comp && comp.last_price !== null && comp.last_price !== undefined) {
+        if (comp?.last_price != null) {
           setPendingPrices(prev => ({
             ...prev,
             [competitorId]: { price: comp.last_price, currency: comp.last_price_currency ?? 'USD' },
           }))
           setProducts(prev => prev.map(p => ({
             ...p,
-            competitor_urls: (p.competitor_urls ?? []).map(c =>
-              c.id === competitorId ? { ...c, ...comp } : c
-            ),
+            competitor_urls: (p.competitor_urls ?? []).map(c => c.id === competitorId ? { ...c, ...comp } : c),
           })))
         }
       })
       .catch(() => {})
-      .finally(() => {
-        setFetchingIds(prev => {
-          const next = { ...prev }
-          delete next[competitorId]
-          return next
-        })
-      })
+      .finally(() => { setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n }) })
   }
 
-  const handleConfirmPrice = (competitorId: string) => {
-    setPendingPrices(prev => {
-      const next = { ...prev }
-      delete next[competitorId]
-      return next
-    })
+  const handleConfirmPrice = (id: string) => {
+    setPendingPrices(prev => { const n = { ...prev }; delete n[id]; return n })
   }
 
-  const handleRejectPrice = async (competitorId: string) => {
-    setPendingPrices(prev => {
-      const next = { ...prev }
-      delete next[competitorId]
-      return next
-    })
+  const handleRejectPrice = async (id: string) => {
+    setPendingPrices(prev => { const n = { ...prev }; delete n[id]; return n })
     setProducts(prev => prev.map(p => ({
       ...p,
       competitor_urls: (p.competitor_urls ?? []).map(c =>
-        c.id === competitorId ? { ...c, last_price: null, last_checked_at: null } : c
+        c.id === id ? { ...c, last_price: null, last_checked_at: null } : c
       ),
     })))
-    const comp = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === competitorId)
+    const comp = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === id)
     if (!comp) return
     await fetch('/api/competitors/update', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ competitorId, url: comp.url, updatedPrice: null }),
+      body: JSON.stringify({ competitorId: id, url: comp.url, updatedPrice: null }),
     }).catch(() => {})
   }
 
-  const handleProductAdded = (product: Product) => {
-    setProducts(prev => [product, ...prev])
-    setShowAddProduct(false)
-  }
+  const handleProductAdded = (product: Product) => { setProducts(prev => [product, ...prev]); setShowAddProduct(false) }
 
   const handleCompetitorAdded = (productId: string, competitor: CompetitorUrl) => {
     setProducts(prev => prev.map(p =>
@@ -137,18 +158,14 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
     setProducts(prev => prev.map(p =>
       p.id !== productId ? p : {
-        ...p,
-        competitor_urls: (p.competitor_urls ?? []).map(c => c.id === competitor.id ? competitor : c),
+        ...p, competitor_urls: (p.competitor_urls ?? []).map(c => c.id === competitor.id ? competitor : c),
       }
     ))
   }
 
   const handleCompetitorDeleted = (productId: string, competitorId: string) => {
     setProducts(prev => prev.map(p =>
-      p.id !== productId ? p : {
-        ...p,
-        competitor_urls: (p.competitor_urls ?? []).filter(c => c.id !== competitorId),
-      }
+      p.id !== productId ? p : { ...p, competitor_urls: (p.competitor_urls ?? []).filter(c => c.id !== competitorId) }
     ))
     setEditingCompetitor(null)
     setPendingPrices(prev => { const n = { ...prev }; delete n[competitorId]; return n })
@@ -164,6 +181,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
       <main className="flex-1 p-8 overflow-y-auto max-h-screen">
+
+        {/* Header */}
         <div className="flex justify-between items-start mb-7">
           <div>
             <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
@@ -171,18 +190,17 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               Checks run {limits.checkFrequency} · {products.length} products · {totalCompetitors} URLs tracked
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 font-semibold cursor-pointer">
-              <span>VAT on prices</span>
+          <div className="flex items-center gap-2">
+            <VatCountrySelector countryCode={vatCountryCode} onChange={handleVatCountryChange} />
+            {vatRate > 0 && (
               <button
                 type="button"
-                onClick={handleVatToggle}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showVat ? 'bg-black' : 'bg-gray-300'}`}
-                aria-pressed={showVat}
+                onClick={() => { const n = !showVat; setShowVat(n); window.localStorage.setItem('pricewatch:showVat', String(n)) }}
+                className={`flex items-center gap-2 border rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${showVat ? 'bg-black text-white border-black' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
               >
-                <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${showVat ? 'translate-x-5' : 'translate-x-1'}`} />
+                VAT {showVat ? 'on' : 'off'}
               </button>
-            </label>
+            )}
             <button
               onClick={() => setShowAddProduct(true)}
               disabled={products.length >= limits.products && limits.products !== Infinity}
@@ -193,6 +211,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           </div>
         </div>
 
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
@@ -212,56 +231,187 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           ))}
         </div>
 
+        {/* Alerts */}
         {alerts.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
             <h2 className="font-bold text-sm mb-4">Recent Alerts</h2>
             <div className="space-y-0">
-              {alerts.slice(0, 5).map((alert: any) => (
-                <AlertBadge key={alert.id} alert={alert} />
-              ))}
+              {alerts.slice(0, 5).map((alert: any) => <AlertBadge key={alert.id} alert={alert} />)}
             </div>
           </div>
         )}
 
-        <h2 className="font-bold text-sm mb-3">Your Products</h2>
-
-        {products.length === 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-12 text-center">
-            <div className="text-4xl mb-3">📦</div>
-            <h3 className="font-bold text-base mb-1">No products yet</h3>
-            <p className="text-sm text-gray-500 mb-5">Add your first product and start tracking competitor prices.</p>
-            <button onClick={() => setShowAddProduct(true)} className="bg-black text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-800 transition-colors">
-              Add your first product
+        {/* View toggle + search */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5">
+            <button
+              onClick={() => setViewMode('products')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'products' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+            >
+              Products
+            </button>
+            <button
+              onClick={() => setViewMode('competitors')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'competitors' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+            >
+              By Competitor
             </button>
           </div>
-        ) : (
+          <input
+            type="text"
+            placeholder={viewMode === 'products' ? 'Search products...' : 'Search competitors...'}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="flex-1 max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
+          />
+          <span className="text-xs text-gray-400 ml-auto">
+            {viewMode === 'products' ? `${filteredProducts.length} products` : `${competitorGroups.length} competitors`}
+          </span>
+        </div>
+
+        {/* Products view */}
+        {viewMode === 'products' && (
+          <div>
+            {products.length === 0 ? (
+              <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-12 text-center">
+                <div className="text-4xl mb-3">📦</div>
+                <h3 className="font-bold text-base mb-1">No products yet</h3>
+                <p className="text-sm text-gray-500 mb-5">Add your first product and start tracking competitor prices.</p>
+                <button onClick={() => setShowAddProduct(true)} className="bg-black text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-800 transition-colors">
+                  Add your first product
+                </button>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center text-sm text-gray-500">
+                No products match &quot;{searchQuery}&quot;
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredProducts.map(product => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    isExpanded={expandedProduct === product.id}
+                    onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
+                    onAddCompetitor={() => setAddCompetitorFor(product.id)}
+                    onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
+                    onCurrencyUpdated={handleProductCurrencyUpdated}
+                    competitorLimit={limits.competitors}
+                    showVat={showVat}
+                    vatRate={vatRate}
+                    vatCountryCode={vatCountryCode}
+                    fetchingIds={fetchingIds}
+                    pendingPrices={pendingPrices}
+                    onConfirmPrice={handleConfirmPrice}
+                    onRejectPrice={handleRejectPrice}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Competitor view */}
+        {viewMode === 'competitors' && (
           <div className="space-y-3">
-            {products.map(product => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                isExpanded={expandedProduct === product.id}
-                onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
-                onAddCompetitor={() => setAddCompetitorFor(product.id)}
-                onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
-                onCurrencyUpdated={handleProductCurrencyUpdated}
-                competitorLimit={limits.competitors}
-                showVat={showVat}
-                fetchingIds={fetchingIds}
-                pendingPrices={pendingPrices}
-                onConfirmPrice={handleConfirmPrice}
-                onRejectPrice={handleRejectPrice}
-              />
-            ))}
+            {competitorGroups.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center text-sm text-gray-500">
+                No competitors added yet. Add some from the Products view.
+              </div>
+            ) : (
+              competitorGroups
+                .filter(g => !searchQuery || g.domain.includes(searchQuery.toLowerCase()))
+                .map(group => {
+                  const isOpen = expandedDomain === group.domain
+                  const anyChanged = group.entries.some(e =>
+                    e.comp.last_changed_at && new Date(e.comp.last_changed_at) > new Date(Date.now() - 86400000)
+                  )
+                  const pricedEntries = group.entries.filter(e => e.comp.last_price !== null)
+
+                  return (
+                    <div key={group.domain} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                      <button
+                        onClick={() => setExpandedDomain(isOpen ? null : group.domain)}
+                        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                          <img
+                            src={`https://www.google.com/s2/favicons?domain=${group.domain}&sz=32`}
+                            alt=""
+                            className="w-5 h-5"
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm">{group.domain}</div>
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            {group.entries.length} product{group.entries.length !== 1 ? 's' : ''} tracked
+                            {pricedEntries.length > 0 && (
+                              <span className="ml-1">
+                                · prices: {pricedEntries.map(e => formatMoney(
+                                  applyVat(e.comp.last_price!, showVat ? vatRate : 0),
+                                  normalizeCurrencyCode(e.comp.last_price_currency ?? 'SEK')
+                                )).join(', ')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {anyChanged && <span className="bg-red-50 text-red-600 text-xs font-semibold px-2.5 py-1 rounded-full">Changed!</span>}
+                          <span className="text-gray-300 text-sm">{isOpen ? '▲' : '▼'}</span>
+                        </div>
+                      </button>
+
+                      {isOpen && (
+                        <div className="border-t border-gray-100 px-5 pb-4 pt-3 space-y-2">
+                          {group.entries.map(({ comp, product }) => {
+                            const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, showVat ? vatRate : 0) : null
+                            const productPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
+                            const cheaper = priceWithVat !== null && productPrice !== null && priceWithVat < productPrice
+                            const currency = normalizeCurrencyCode(comp.last_price_currency ?? product.currency_code ?? 'USD')
+
+                            return (
+                              <div key={comp.id} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-semibold text-gray-500 mb-0.5 truncate">{product.title}</div>
+                                  <a href={comp.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block max-w-sm">
+                                    {comp.label || comp.url}
+                                  </a>
+                                </div>
+                                <button
+                                  onClick={() => setEditingCompetitor({ productId: product.id, competitor: comp })}
+                                  className="text-gray-400 hover:text-black transition-colors text-sm shrink-0"
+                                >
+                                  ✏️
+                                </button>
+                                {priceWithVat !== null ? (
+                                  <div className="text-right shrink-0">
+                                    <div className={`text-base font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
+                                      {formatMoney(priceWithVat, currency)}
+                                    </div>
+                                    <div className={`text-[10px] font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
+                                      {cheaper ? 'CHEAPER' : 'HIGHER'}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-gray-400 shrink-0">No price yet</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+            )}
           </div>
         )}
 
         {limits.products !== Infinity && products.length >= limits.products && (
           <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-center justify-between">
-            <p className="text-sm text-purple-700 font-medium">You've reached your {plan} plan limit of {limits.products} products.</p>
-            <button className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors">
-              Upgrade Plan
-            </button>
+            <p className="text-sm text-purple-700 font-medium">You have reached your {plan} plan limit of {limits.products} products.</p>
+            <button className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors">Upgrade Plan</button>
           </div>
         )}
       </main>
