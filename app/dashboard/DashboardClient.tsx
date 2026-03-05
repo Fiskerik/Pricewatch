@@ -9,9 +9,9 @@ import AddProductModal from '@/components/AddProductModal'
 import AlertBadge from '@/components/AlertBadge'
 import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/components/VatCountrySelector'
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
-import { applyVat } from '@/lib/vat'
+import { applyVat, removeVat } from '@/lib/vat'
 
-interface PendingPrice { price: number; currency: string }
+interface PendingPrice { price: number; currency: string; includesVat: boolean }
 type ViewMode = 'products' | 'competitors'
 
 interface Props {
@@ -43,6 +43,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   // Background fetch
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
+  const [competitorVatIncluded, setCompetitorVatIncluded] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const storedCountry = window.localStorage.getItem('pricewatch:vatCountry')
@@ -53,6 +54,18 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
     const storedVat = window.localStorage.getItem('pricewatch:showVat')
     if (storedVat === 'false') setShowVat(false)
+
+    const storedVatIncluded = window.localStorage.getItem('pricewatch:competitorVatIncluded')
+    if (storedVatIncluded) {
+      try {
+        const parsed = JSON.parse(storedVatIncluded)
+        if (parsed && typeof parsed === 'object') {
+          setCompetitorVatIncluded(parsed)
+        }
+      } catch (err) {
+        console.log('[dashboard] failed parsing stored competitor VAT preferences', err)
+      }
+    }
   }, [])
 
   const handleVatCountryChange = (code: string, rate: number) => {
@@ -98,6 +111,17 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     )
   }, [products, searchQuery])
 
+
+  const persistCompetitorVatIncluded = (next: Record<string, boolean>) => {
+    setCompetitorVatIncluded(next)
+    window.localStorage.setItem('pricewatch:competitorVatIncluded', JSON.stringify(next))
+  }
+
+  const getDisplayedCompetitorPrice = (price: number, includesVat: boolean) => {
+    if (showVat) return includesVat ? price : applyVat(price, vatRate)
+    return includesVat ? removeVat(price, vatRate) : price
+  }
+
   const triggerBackgroundFetch = (competitorId: string) => {
     setFetchingIds(prev => ({ ...prev, [competitorId]: true }))
     fetch('/api/competitors/fetch', {
@@ -112,7 +136,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         if (comp?.last_price != null) {
           setPendingPrices(prev => ({
             ...prev,
-            [competitorId]: { price: comp.last_price, currency: comp.last_price_currency ?? 'USD' },
+            [competitorId]: {
+              price: comp.last_price,
+              currency: comp.last_price_currency ?? 'USD',
+              includesVat: competitorVatIncluded[competitorId] ?? comp.vat_included ?? true,
+            },
           }))
           setProducts(prev => prev.map(p => ({
             ...p,
@@ -132,12 +160,10 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       return
     }
 
-    const adjustedPrice = includesVat ? pending.price : applyVat(pending.price, vatRate)
     console.log('[dashboard] confirming pending competitor price', {
       competitorId: id,
       fetchedPrice: pending.price,
       includesVat,
-      adjustedPrice,
       vatRate,
       currency: pending.currency,
     })
@@ -146,12 +172,14 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       ...p,
       competitor_urls: (p.competitor_urls ?? []).map(c =>
         c.id === id
-          ? { ...c, last_price: adjustedPrice, last_price_currency: pending.currency, last_checked_at: new Date().toISOString() }
+          ? { ...c, last_price: pending.price, last_price_currency: pending.currency, last_checked_at: new Date().toISOString(), vat_included: includesVat }
           : c,
       ),
     })))
 
     setPendingPrices(prev => { const n = { ...prev }; delete n[id]; return n })
+
+    persistCompetitorVatIncluded({ ...competitorVatIncluded, [id]: includesVat })
 
     await fetch('/api/competitors/update', {
       method: 'PATCH',
@@ -160,7 +188,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         competitorId: id,
         url: competitor.url,
         label: competitor.label,
-        updatedPrice: adjustedPrice,
+        updatedPrice: pending.price,
         updatedCurrency: pending.currency,
       }),
     }).catch(() => {})
@@ -363,8 +391,17 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     onCurrencyUpdated={handleProductCurrencyUpdated}
                     competitorLimit={limits.competitors}
                     showVat={showVat}
+                    vatRate={vatRate}
+                    competitorVatIncluded={competitorVatIncluded}
                     fetchingIds={fetchingIds}
                     pendingPrices={pendingPrices}
+                    onPendingVatIncludedChange={(competitorId, includesVat) => {
+                      setPendingPrices(prev => {
+                        const current = prev[competitorId]
+                        if (!current) return prev
+                        return { ...prev, [competitorId]: { ...current, includesVat } }
+                      })
+                    }}
                     onConfirmPrice={handleConfirmPrice}
                     onRejectPrice={handleRejectPrice}
                   />
@@ -412,7 +449,10 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                             {pricedEntries.length > 0 && (
                               <span className="ml-1">
                                 · prices: {pricedEntries.map(e => formatMoney(
-                                  applyVat(e.comp.last_price!, showVat ? vatRate : 0),
+                                  getDisplayedCompetitorPrice(
+                                  e.comp.last_price!,
+                                  competitorVatIncluded[e.comp.id] ?? e.comp.vat_included ?? true,
+                                ),
                                   normalizeCurrencyCode(e.comp.last_price_currency ?? 'SEK')
                                 )).join(', ')}
                               </span>
@@ -428,7 +468,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       {isOpen && (
                         <div className="border-t border-gray-100 px-4 sm:px-5 pb-4 pt-3 space-y-2">
                           {group.entries.map(({ comp, product }) => {
-                            const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, showVat ? vatRate : 0) : null
+                            const priceWithVat = comp.last_price !== null
+                              ? getDisplayedCompetitorPrice(comp.last_price, competitorVatIncluded[comp.id] ?? comp.vat_included ?? true)
+                              : null
                             const productPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
                             const cheaper = priceWithVat !== null && productPrice !== null && priceWithVat < productPrice
                             const currency = normalizeCurrencyCode(comp.last_price_currency ?? product.currency_code ?? 'USD')

@@ -29,6 +29,7 @@ export interface CompetitorUrl {
   url: string
   label: string | null
   last_price: number | null
+  vat_included?: boolean | null
   last_price_currency?: string | null
   last_checked_at: string | null
   last_changed_at: string | null
@@ -45,7 +46,7 @@ export interface PriceHistory {
 }
 
 export const PLAN_LIMITS: Record<Plan, { products: number; competitors: number; checkFrequency: 'hourly' | 'daily' }> = {
-  free:     { products: 3,         competitors: 2,   checkFrequency: 'daily' },
+  free:     { products: 10,        competitors: 3,   checkFrequency: 'daily' },
   pro:      { products: 50,        competitors: 10,  checkFrequency: 'daily' },  
   business: { products: Infinity,  competitors: Infinity, checkFrequency: 'daily' }, 
 }
