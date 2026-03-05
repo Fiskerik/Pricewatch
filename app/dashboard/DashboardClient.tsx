@@ -9,9 +9,9 @@ import AddProductModal from '@/components/AddProductModal'
 import AlertBadge from '@/components/AlertBadge'
 import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/components/VatCountrySelector'
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
-import { applyVat, removeVat } from '@/lib/vat'
+import { applyVat } from '@/lib/vat'
 
-interface PendingPrice { price: number; currency: string; includesVat: boolean }
+interface PendingPrice { price: number; currency: string }
 type ViewMode = 'products' | 'competitors'
 
 interface Props {
@@ -27,7 +27,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null)
   const [addCompetitorFor, setAddCompetitorFor] = useState<string | null>(null)
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
 
   // VAT state lifted up — avoids flash-of-no-VAT in ProductCard
@@ -43,7 +42,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   // Background fetch
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
-  const [competitorVatIncluded, setCompetitorVatIncluded] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const storedCountry = window.localStorage.getItem('pricewatch:vatCountry')
@@ -54,18 +52,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
     const storedVat = window.localStorage.getItem('pricewatch:showVat')
     if (storedVat === 'false') setShowVat(false)
-
-    const storedVatIncluded = window.localStorage.getItem('pricewatch:competitorVatIncluded')
-    if (storedVatIncluded) {
-      try {
-        const parsed = JSON.parse(storedVatIncluded)
-        if (parsed && typeof parsed === 'object') {
-          setCompetitorVatIncluded(parsed)
-        }
-      } catch (err) {
-        console.log('[dashboard] failed parsing stored competitor VAT preferences', err)
-      }
-    }
   }, [])
 
   const handleVatCountryChange = (code: string, rate: number) => {
@@ -111,17 +97,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     )
   }, [products, searchQuery])
 
-
-  const persistCompetitorVatIncluded = (next: Record<string, boolean>) => {
-    setCompetitorVatIncluded(next)
-    window.localStorage.setItem('pricewatch:competitorVatIncluded', JSON.stringify(next))
-  }
-
-  const getDisplayedCompetitorPrice = (price: number, includesVat: boolean) => {
-    if (showVat) return includesVat ? price : applyVat(price, vatRate)
-    return includesVat ? removeVat(price, vatRate) : price
-  }
-
   const triggerBackgroundFetch = (competitorId: string) => {
     setFetchingIds(prev => ({ ...prev, [competitorId]: true }))
     fetch('/api/competitors/fetch', {
@@ -136,11 +111,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         if (comp?.last_price != null) {
           setPendingPrices(prev => ({
             ...prev,
-            [competitorId]: {
-              price: comp.last_price,
-              currency: comp.last_price_currency ?? 'USD',
-              includesVat: competitorVatIncluded[competitorId] ?? comp.vat_included ?? true,
-            },
+            [competitorId]: { price: comp.last_price, currency: comp.last_price_currency ?? 'USD' },
           }))
           setProducts(prev => prev.map(p => ({
             ...p,
@@ -160,26 +131,37 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       return
     }
 
-    console.log('[dashboard] confirming pending competitor price', {
-      competitorId: id,
-      fetchedPrice: pending.price,
-      includesVat,
-      vatRate,
-      currency: pending.currency,
-    })
+    // Auto-convert to product currency if they differ (e.g. USD eBay price → SEK product)
+    const product = products.find(p => (p.competitor_urls ?? []).some(c => c.id === id))
+    const productCurrency = (product?.currency_code ?? 'USD').toUpperCase()
+    let finalPrice = pending.price
+    let finalCurrency = (pending.currency || 'USD').toUpperCase()
+
+    if (finalCurrency !== productCurrency) {
+      try {
+        const res = await fetch(`https://open.er-api.com/v6/latest/${finalCurrency}`)
+        if (res.ok) {
+          const fx = await res.json()
+          const rate = fx?.rates?.[productCurrency]
+          if (rate) {
+            finalPrice = Math.round(pending.price * rate * 100) / 100
+            finalCurrency = productCurrency
+            console.log(`[confirm] converted ${pending.price} ${pending.currency} → ${finalPrice} ${productCurrency}`)
+          }
+        }
+      } catch (err) {
+        console.warn('[confirm] FX conversion failed, keeping original', err)
+      }
+    }
 
     setProducts(prev => prev.map(p => ({
       ...p,
       competitor_urls: (p.competitor_urls ?? []).map(c =>
-        c.id === id
-          ? { ...c, last_price: pending.price, last_price_currency: pending.currency, last_checked_at: new Date().toISOString(), vat_included: includesVat }
-          : c,
+        c.id === id ? { ...c, last_price: finalPrice, last_price_currency: finalCurrency, last_checked_at: new Date().toISOString() } : c
       ),
     })))
 
     setPendingPrices(prev => { const n = { ...prev }; delete n[id]; return n })
-
-    persistCompetitorVatIncluded({ ...competitorVatIncluded, [id]: includesVat })
 
     await fetch('/api/competitors/update', {
       method: 'PATCH',
@@ -188,8 +170,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         competitorId: id,
         url: competitor.url,
         label: competitor.label,
-        updatedPrice: pending.price,
-        updatedCurrency: pending.currency,
+        updatedPrice: finalPrice,
+        updatedCurrency: finalCurrency,
       }),
     }).catch(() => {})
   }
@@ -239,50 +221,25 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n })
   }
 
-  const handleProductCurrencyUpdated = (
-    productId: string,
-    currencyCode: string,
-    converted?: {
-      product?: { our_price: number | null }
-      competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
-    },
-  ) => {
-    const convertedCompetitorsById = Object.fromEntries((converted?.competitors ?? []).map(c => [c.id, c]))
-    setProducts(prev => prev.map(p => {
-      if (p.id !== productId) return p
-      return {
-        ...p,
-        currency_code: currencyCode,
-        our_price: converted?.product?.our_price ?? p.our_price,
-        competitor_urls: (p.competitor_urls ?? []).map(c => ({
-          ...c,
-          last_price: convertedCompetitorsById[c.id]?.last_price ?? c.last_price,
-          last_price_currency: convertedCompetitorsById[c.id]?.last_price_currency ?? c.last_price_currency,
-        })),
-      }
-    }))
-  }
-
-  const handleProductUpdated = (updatedProduct: Product) => {
-    setProducts(prev => prev.map(p => p.id === updatedProduct.id ? { ...p, ...updatedProduct } : p))
-    setEditingProduct(null)
+  const handleProductCurrencyUpdated = (productId: string, currencyCode: string) => {
+    setProducts(prev => prev.map(p => p.id === productId ? { ...p, currency_code: currencyCode } : p))
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-gray-900 lg:items-stretch overflow-x-hidden" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div className="flex min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
-      <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto lg:max-h-screen">
+      <main className="flex-1 p-8 overflow-y-auto max-h-screen">
 
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:gap-5 lg:flex-row lg:justify-between lg:items-start mb-7">
+        <div className="flex justify-between items-start mb-7">
           <div>
             <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
             <p className="text-sm text-gray-400 mt-0.5">
               Checks run {limits.checkFrequency} · {products.length} products · {totalCompetitors} URLs tracked
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <VatCountrySelector countryCode={vatCountryCode} onChange={handleVatCountryChange} />
             {vatRate > 0 && (
               <button
@@ -304,7 +261,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-7">
+        <div className="grid grid-cols-3 gap-4 mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
             { label: 'Changes Today', value: changedToday, sub: 'price changes', icon: '📊', highlight: changedToday > 0 },
@@ -334,17 +291,17 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         )}
 
         {/* View toggle + search */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5 w-full sm:w-auto">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5">
             <button
               onClick={() => setViewMode('products')}
-              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'products' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'products' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
             >
               Products
             </button>
             <button
               onClick={() => setViewMode('competitors')}
-              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'competitors' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'competitors' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
             >
               By Competitor
             </button>
@@ -354,9 +311,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             placeholder={viewMode === 'products' ? 'Search products...' : 'Search competitors...'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full sm:flex-1 sm:max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
+            className="flex-1 max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
           />
-          <span className="text-xs text-gray-400 sm:ml-auto">
+          <span className="text-xs text-gray-400 ml-auto">
             {viewMode === 'products' ? `${filteredProducts.length} products` : `${competitorGroups.length} competitors`}
           </span>
         </div>
@@ -385,14 +342,14 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     product={product}
                     isExpanded={expandedProduct === product.id}
                     onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
-                    onEditProduct={(selectedProduct) => setEditingProduct(selectedProduct)}
                     onAddCompetitor={() => setAddCompetitorFor(product.id)}
                     onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
+                    onRefreshCompetitor={triggerBackgroundFetch}
                     onCurrencyUpdated={handleProductCurrencyUpdated}
                     competitorLimit={limits.competitors}
                     showVat={showVat}
                     vatRate={vatRate}
-                    competitorVatIncluded={competitorVatIncluded}
+                    competitorVatIncluded={{}}
                     fetchingIds={fetchingIds}
                     pendingPrices={pendingPrices}
                     onPendingVatIncludedChange={(competitorId, includesVat) => {
@@ -432,7 +389,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     <div key={group.domain} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                       <button
                         onClick={() => setExpandedDomain(isOpen ? null : group.domain)}
-                        className="w-full flex items-start sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+                        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
                       >
                         <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                           <img
@@ -449,37 +406,32 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                             {pricedEntries.length > 0 && (
                               <span className="ml-1">
                                 · prices: {pricedEntries.map(e => formatMoney(
-                                  getDisplayedCompetitorPrice(
-                                  e.comp.last_price!,
-                                  competitorVatIncluded[e.comp.id] ?? e.comp.vat_included ?? true,
-                                ),
+                                  applyVat(e.comp.last_price!, showVat ? vatRate : 0),
                                   normalizeCurrencyCode(e.comp.last_price_currency ?? 'SEK')
                                 )).join(', ')}
                               </span>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                        <div className="flex items-center gap-2 shrink-0">
                           {anyChanged && <span className="bg-red-50 text-red-600 text-xs font-semibold px-2.5 py-1 rounded-full">Changed!</span>}
                           <span className="text-gray-300 text-sm">{isOpen ? '▲' : '▼'}</span>
                         </div>
                       </button>
 
                       {isOpen && (
-                        <div className="border-t border-gray-100 px-4 sm:px-5 pb-4 pt-3 space-y-2">
+                        <div className="border-t border-gray-100 px-5 pb-4 pt-3 space-y-2">
                           {group.entries.map(({ comp, product }) => {
-                            const priceWithVat = comp.last_price !== null
-                              ? getDisplayedCompetitorPrice(comp.last_price, competitorVatIncluded[comp.id] ?? comp.vat_included ?? true)
-                              : null
+                            const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, showVat ? vatRate : 0) : null
                             const productPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
                             const cheaper = priceWithVat !== null && productPrice !== null && priceWithVat < productPrice
                             const currency = normalizeCurrencyCode(comp.last_price_currency ?? product.currency_code ?? 'USD')
 
                             return (
-                              <div key={comp.id} className="flex flex-wrap sm:flex-nowrap items-center gap-3 bg-gray-50 border border-gray-100 rounded-xl px-3 sm:px-4 py-3">
+                              <div key={comp.id} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
                                 <div className="flex-1 min-w-0">
                                   <div className="text-xs font-semibold text-gray-500 mb-0.5 truncate">{product.title}</div>
-                                  <a href={comp.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block max-w-full sm:max-w-sm">
+                                  <a href={comp.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block max-w-sm">
                                     {comp.label || comp.url}
                                   </a>
                                 </div>
@@ -490,7 +442,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                                   ✏️
                                 </button>
                                 {priceWithVat !== null ? (
-                                  <div className="text-right shrink-0 ml-auto">
+                                  <div className="text-right shrink-0">
                                     <div className={`text-base font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
                                       {formatMoney(priceWithVat, currency)}
                                     </div>
@@ -514,7 +466,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         )}
 
         {limits.products !== Infinity && products.length >= limits.products && (
-          <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:justify-between">
+          <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-center justify-between">
             <p className="text-sm text-purple-700 font-medium">You have reached your {plan} plan limit of {limits.products} products.</p>
             <button className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors">Upgrade Plan</button>
           </div>
@@ -540,16 +492,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           onAdded={() => {}}
           onUpdated={(comp) => handleCompetitorUpdated(editingCompetitor.productId, comp)}
           onDeleted={(competitorId) => handleCompetitorDeleted(editingCompetitor.productId, competitorId)}
-        />
-      )}
-      {editingProduct && (
-        <AddProductModal
-          mode="edit"
-          product={editingProduct}
-          storeId={store?.id ?? ''}
-          onClose={() => setEditingProduct(null)}
-          onAdded={() => {}}
-          onUpdated={handleProductUpdated}
         />
       )}
       {showAddProduct && (
