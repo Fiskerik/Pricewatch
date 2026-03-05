@@ -11,7 +11,7 @@ import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/componen
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
 import { applyVat } from '@/lib/vat'
 
-interface PendingPrice { price: number; currency: string }
+interface PendingPrice { price: number; currency: string; includesVat: boolean }
 type ViewMode = 'products' | 'competitors'
 
 interface Props {
