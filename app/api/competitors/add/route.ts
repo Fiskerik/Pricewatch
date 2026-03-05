@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase'
+import { cleanUrl } from '@/lib/scraper'
 
 function normalizeCompetitorUrl(rawUrl: string): string {
   const parsed = new URL(rawUrl.trim())
@@ -22,12 +23,11 @@ export async function POST(req: NextRequest) {
 
   let normalizedUrl = ''
   try {
-    normalizedUrl = normalizeCompetitorUrl(String(url))
+    normalizedUrl = normalizeCompetitorUrl(cleanUrl(String(url)))
   } catch {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
 
-  // Verify ownership: product → store → user
   const { data: product } = await supabase
     .from('products')
     .select('id, stores!inner(user_id)')
@@ -37,7 +37,6 @@ export async function POST(req: NextRequest) {
 
   if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
 
-  // Insert competitor URL
   const { data: competitor, error } = await admin
     .from('competitor_urls')
     .insert({
@@ -52,26 +51,15 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) {
-    console.error('[competitors/add] insert failed', {
-      userId: user.id,
-      productId,
-      normalizedUrl,
-      message: error.message,
-      code: error.code,
-      details: error.details,
-    })
+    console.error('[competitors/add] insert failed', { userId: user.id, productId, normalizedUrl, message: error.message, code: error.code })
     if (error.code === '23505') {
       return NextResponse.json({ error: 'This competitor URL is already added for this product.' }, { status: 409 })
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Record initial price in history
   if (initialPrice && competitor) {
-    await admin.from('price_history').insert({
-      competitor_url_id: competitor.id,
-      price: initialPrice,
-    })
+    await admin.from('price_history').insert({ competitor_url_id: competitor.id, price: initialPrice })
   }
 
   return NextResponse.json({ competitor })
