@@ -1,27 +1,13 @@
-/**
- * email.ts — Alert delivery with multiple provider support
- *
- * Set ONE of these in Vercel env vars:
- *
- *  Gmail (free, no domain needed):
- *    EMAIL_PROVIDER=gmail
- *    GMAIL_USER=you@gmail.com
- *    GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
- *    → Get app password: myaccount.google.com/apppasswords
- *
- *  Resend free tier (no custom domain needed — use onboarding@resend.dev):
- *    EMAIL_PROVIDER=resend
- *    RESEND_API_KEY=re_...
- *    EMAIL_FROM=onboarding@resend.dev
- *
- *  SendGrid (100 free/day, verify a single sender email — no domain needed):
- *    EMAIL_PROVIDER=sendgrid
- *    SENDGRID_API_KEY=SG....
- *    EMAIL_FROM=you@gmail.com
- */
-
-const provider = process.env.EMAIL_PROVIDER
-  ?? (process.env.RESEND_API_KEY ? 'resend' : process.env.GMAIL_USER ? 'gmail' : 'none')
+export interface PriceAlertParams {
+  to: string
+  productTitle: string
+  competitorLabel: string
+  competitorUrl: string
+  oldPrice: number
+  newPrice: number
+  ourPrice: number
+  currency?: string
+}
 
 function fmtPrice(amount: number, currency = 'USD') {
   try {
@@ -31,8 +17,9 @@ function fmtPrice(amount: number, currency = 'USD') {
   }
 }
 
-function buildEmail(params: PriceAlertParams): { subject: string; html: string } {
-  const { productTitle, competitorLabel, competitorUrl, oldPrice, newPrice, ourPrice, currency = 'USD' } = params
+export async function sendPriceAlert(params: PriceAlertParams): Promise<void> {
+  const { to, productTitle, competitorLabel, competitorUrl, oldPrice, newPrice, ourPrice, currency = 'USD' } = params
+
   const dropped = newPrice < oldPrice
   const diff = Math.abs(newPrice - oldPrice)
   const pct = Math.abs(((newPrice - oldPrice) / oldPrice) * 100).toFixed(1)
@@ -85,68 +72,14 @@ function buildEmail(params: PriceAlertParams): { subject: string; html: string }
 </div>
 </body></html>`
 
-  return { subject, html }
-}
-
-async function sendViaResend(to: string, subject: string, html: string) {
-  const { Resend } = await import('resend')
   const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) throw new Error('RESEND_API_KEY not set')
-  const from = process.env.EMAIL_FROM || 'onboarding@resend.dev'
+  if (!apiKey) {
+    console.warn('[email] RESEND_API_KEY not set — skipping alert')
+    return
+  }
+
+  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const { Resend } = await import('resend')
   const resend = new Resend(apiKey)
   await resend.emails.send({ from, to, subject, html })
-}
-
-async function sendViaGmail(to: string, subject: string, html: string) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const nodemailer = require('nodemailer')
-  const user = process.env.GMAIL_USER
-  const pass = process.env.GMAIL_APP_PASSWORD
-  if (!user || !pass) throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD must both be set')
-  const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user, pass } })
-  await transporter.sendMail({ from: `PriceWatch <${user}>`, to, subject, html })
-}
-
-async function sendViaSendGrid(to: string, subject: string, html: string) {
-  const apiKey = process.env.SENDGRID_API_KEY
-  const from = process.env.EMAIL_FROM
-  if (!apiKey) throw new Error('SENDGRID_API_KEY not set')
-  if (!from) throw new Error('EMAIL_FROM (verified sender email) must be set for SendGrid')
-  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: from, name: 'PriceWatch' },
-      subject,
-      content: [{ type: 'text/html', value: html }],
-    }),
-  })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${await res.text().catch(() => '')}`)
-}
-
-export interface PriceAlertParams {
-  to: string
-  productTitle: string
-  competitorLabel: string
-  competitorUrl: string
-  oldPrice: number
-  newPrice: number
-  ourPrice: number
-  currency?: string
-}
-
-export async function sendPriceAlert(params: PriceAlertParams): Promise<void> {
-  const { subject, html } = buildEmail(params)
-  console.log(`[email] sending via ${provider} to ${params.to}`)
-  switch (provider) {
-    case 'gmail':    return sendViaGmail(params.to, subject, html)
-    case 'sendgrid': return sendViaSendGrid(params.to, subject, html)
-    case 'resend':   return sendViaResend(params.to, subject, html)
-    case 'none':
-      console.warn('[email] No provider configured — alert skipped. Set EMAIL_PROVIDER in Vercel env vars.')
-      return
-    default:
-      throw new Error(`Unknown EMAIL_PROVIDER="${provider}"`)
-  }
 }
