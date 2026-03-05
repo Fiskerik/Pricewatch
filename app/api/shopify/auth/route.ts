@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { shopify } from '@/lib/shopify'
+import { getShopifyClient } from '@/lib/shopify'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Initiate Shopify OAuth
-  const authRoute = await shopify.auth.begin({
+  const authRoute = await getShopifyClient().auth.begin({
     shop,
     callbackPath: '/api/shopify/callback',
     isOnline: false,
