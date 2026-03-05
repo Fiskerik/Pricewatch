@@ -11,9 +11,10 @@ interface Props {
   onEditCompetitor: (competitor: CompetitorUrl) => void
   onCurrencyUpdated: (productId: string, currencyCode: string) => void
   competitorLimit: number
+  showVat: boolean
 }
 
-export default function ProductCard({ product, isExpanded, onToggle, onAddCompetitor, onEditCompetitor, onCurrencyUpdated, competitorLimit }: Props) {
+export default function ProductCard({ product, isExpanded, onToggle, onAddCompetitor, onEditCompetitor, onCurrencyUpdated, competitorLimit, showVat }: Props) {
   const competitors = product.competitor_urls ?? []
   const [userCountryCode, setUserCountryCode] = useState<string | null>(null)
   const hasChanges = competitors.some(c => {
@@ -23,6 +24,7 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
   const atLimit = competitorLimit !== Infinity && competitors.length >= competitorLimit
   const productCurrency = product.currency_code ?? 'USD'
   const vatRate = useMemo(() => getVatRateForCountry(userCountryCode), [userCountryCode])
+  const ourPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
 
   useEffect(() => {
     setUserCountryCode(detectUserCountryCode())
@@ -50,7 +52,7 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm truncate">{product.title}</div>
           <div className="text-xs text-gray-400 mt-0.5">
-            {product.our_price ? `Your price: ${formatMoney(product.our_price, normalizeCurrencyCode(productCurrency))} · ` : ''}
+            {ourPrice ? `Your price: ${formatMoney(ourPrice, normalizeCurrencyCode(productCurrency))} · ` : ''}
             {competitors.length} competitor{competitors.length !== 1 ? 's' : ''} tracked
           </div>
         </div>
@@ -78,8 +80,8 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
 
           {competitors.map(comp => {
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
-            const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, vatRate) : null
-            const cheaper = priceWithVat !== null && product.our_price !== null && priceWithVat < product.our_price
+            const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, showVat ? vatRate : 0) : null
+            const cheaper = priceWithVat !== null && ourPrice !== null && priceWithVat < ourPrice
 
             return (
               <div key={comp.id} className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${changed ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
@@ -101,7 +103,7 @@ export default function ProductCard({ product, isExpanded, onToggle, onAddCompet
                   <div className="text-right shrink-0">
                     <div className={`text-lg font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>{formatMoney(priceWithVat, normalizeCurrencyCode(comp.last_price_currency || productCurrency))}</div>
                     <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>{cheaper ? 'CHEAPER' : 'HIGHER'}</div>
-                    {vatRate > 0 && userCountryCode && (
+                    {showVat && vatRate > 0 && userCountryCode && (
                       <div className="text-[10px] text-gray-400 mt-0.5">Incl. {vatRate}% VAT ({userCountryCode})</div>
                     )}
                   </div>
