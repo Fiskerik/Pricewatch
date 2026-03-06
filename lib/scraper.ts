@@ -250,12 +250,62 @@ export const JS_RENDERED_DOMAINS = new Set([
   'etsy.com',
 ])
 
-export async function scrapePrice(url: string): Promise<any> {
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+export interface ScrapeResult {
+  price: number | null
+  scrapedCurrency: CurrencyCode | null
+  method: 'direct' | 'js-render' | 'failed'
+  provider?: string
+  error?: string
+}
+
+/**
+ * Scrapes price from a given URL.
+ * Accepts targetCurrency as second argument to match API route requirements.
+ */
+export async function scrapePrice(
+  url: string, 
+  _targetCurrency?: string // Lade till detta argumentet igen
+): Promise<ScrapeResult> {
+  const domain = getDomain(url)
+
+  // 1. Försök med JS-rendering direkt för kända tunga sidor (som Etsy)
+  if (JS_RENDERED_DOMAINS.has(domain)) {
+    try {
+      const html = await renderJs(url)
+      const result = await extractFromHtml(html, url)
+      if (result.price !== null) {
+        return { ...result, method: 'js-render' }
+      }
+    } catch (err) {
+      console.warn(`[scraper] Initial JS render failed for ${domain}:`, err)
+    }
+  }
+
+  // 2. Fallback eller Direct fetch för övriga
   try {
+    // Om du vill implementera en direct fetch här kan du göra det, 
+    // annars kör vi rendering som standard för att vara säker
     const html = await renderJs(url)
     const result = await extractFromHtml(html, url)
-    return { ...result, method: 'js-render' }
+    
+    if (result.price !== null) {
+      return { ...result, method: 'js-render' }
+    }
+
+    return { 
+      price: null, 
+      scrapedCurrency: null, 
+      method: 'failed', 
+      error: 'Price not found in HTML' 
+    }
   } catch (err) {
-    return { price: null, method: 'failed', error: String(err) }
+    return { 
+      price: null, 
+      scrapedCurrency: null, 
+      method: 'failed', 
+      error: String(err) 
+    }
   }
 }
