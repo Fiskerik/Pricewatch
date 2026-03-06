@@ -245,13 +245,32 @@ async function extractFromHtml(
 
         const extractHmPriceObj = (obj: any, metricName: string) => {
           if (!obj || typeof obj !== 'object') return
-          // Accept numeric or string values
+          // Accept numeric or string values.
+          // H&M often provides both:
+          //   value: 44900
+          //   formattedValue: "449,00"
+          // where `value` is minor units (öre). If we trust value directly,
+          // we can end up with 44,900.00 instead of 449.00.
           const rawVal = obj.value ?? obj.formattedValue ?? obj.price
           const curr: string = obj.currencyIso ?? obj.currency ?? obj.currencyCode ?? ''
           if (rawVal != null && curr) {
-            const amount = typeof rawVal === 'number'
+            const formattedAmount = parsePriceText(String(obj.formattedValue ?? ''))
+            let amount = typeof rawVal === 'number'
               ? rawVal
               : parsePriceText(String(rawVal))
+
+            // If numeric raw value looks 100x larger than formattedValue,
+            // interpret raw value as minor units.
+            if (
+              typeof rawVal === 'number' &&
+              Number.isInteger(rawVal) &&
+              formattedAmount &&
+              Math.abs(rawVal / 100 - formattedAmount) < 0.0001
+            ) {
+              amount = rawVal / 100
+              console.log('[scraper][hm] normalized minor-unit value', { metricName, rawVal, formattedAmount, normalized: amount, curr })
+            }
+
             if (amount) addCandidate({ metric: metricName, source: 'HM __NEXT_DATA__', price: amount, currency: curr })
           }
         }
