@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -14,7 +14,8 @@ interface Store {
   stripe_customer_id?: string | null
 }
 
-export default function SettingsPage() {
+// 1. Skapa en separat komponent för själva innehållet
+function SettingsContent() {
   const supabase = createClientComponentClient()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -31,7 +32,6 @@ export default function SettingsPage() {
       if (!user) { router.push('/login'); return }
       setUser(user)
 
-      // Fetch all stores for this user
       const { data: allStores } = await supabase
         .from('stores')
         .select('*')
@@ -44,12 +44,11 @@ export default function SettingsPage() {
     }
     load()
 
-    // Show success message if just connected
     if (searchParams?.get('connected') === 'true') {
       setShowSuccess(true)
       setTimeout(() => setShowSuccess(false), 5000)
     }
-  }, [searchParams])
+  }, [searchParams, supabase, router])
 
   const handleDisconnectStore = async (storeId: string) => {
     setSaving(true)
@@ -60,7 +59,6 @@ export default function SettingsPage() {
         .eq('id', storeId)
         .eq('user_id', user.id)
 
-      // Refresh stores list
       const { data: allStores } = await supabase
         .from('stores')
         .select('*')
@@ -82,7 +80,6 @@ export default function SettingsPage() {
         .eq('id', storeId)
         .eq('user_id', user.id)
 
-      // Refresh stores list
       const { data: allStores } = await supabase
         .from('stores')
         .select('*')
@@ -114,7 +111,6 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <div className="max-w-2xl mx-auto px-6 py-10">
-        {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
             ← Dashboard
@@ -134,7 +130,7 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Account */}
+        {/* --- Account --- */}
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <h2 className="font-bold text-base mb-4">Account</h2>
           <div className="space-y-3">
@@ -159,7 +155,7 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Shopify Stores */}
+        {/* --- Shopify Stores --- */}
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-bold text-base">Shopify Stores</h2>
@@ -184,42 +180,24 @@ export default function SettingsPage() {
           ) : (
             <div className="space-y-3">
               {connectedStores.map(store => (
-                <div
-                  key={store.id}
-                  className="border border-gray-200 rounded-xl p-4 hover:border-gray-300 transition-colors"
-                >
+                <div key={store.id} className="border border-gray-200 rounded-xl p-4 hover:border-gray-300 transition-colors">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <div className="text-sm font-semibold text-gray-900">
-                          {store.store_name || store.shop_domain}
-                        </div>
+                        <div className="text-sm font-semibold text-gray-900">{store.store_name || store.shop_domain}</div>
                         {store.is_primary && (
-                          <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded">
-                            PRIMARY
-                          </span>
+                          <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded">PRIMARY</span>
                         )}
                       </div>
                       <div className="text-xs text-gray-500">{store.shop_domain}</div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        Connected {new Date(store.created_at).toLocaleDateString()}
-                      </div>
                     </div>
                     <div className="flex gap-2">
                       {!store.is_primary && (
-                        <button
-                          onClick={() => handleSetPrimary(store.id)}
-                          disabled={saving}
-                          className="text-xs font-semibold text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg hover:bg-purple-50 transition-colors disabled:opacity-50"
-                        >
+                        <button onClick={() => handleSetPrimary(store.id)} disabled={saving} className="text-xs font-semibold text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg hover:bg-purple-50 transition-colors disabled:opacity-50">
                           Set Primary
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDisconnectStore(store.id)}
-                        disabled={saving}
-                        className="text-xs font-semibold text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-                      >
+                      <button onClick={() => handleDisconnectStore(store.id)} disabled={saving} className="text-xs font-semibold text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50">
                         {saving ? 'Disconnecting...' : 'Disconnect'}
                       </button>
                     </div>
@@ -228,19 +206,12 @@ export default function SettingsPage() {
               ))}
             </div>
           )}
-
-          <div className="mt-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
-            <p className="text-xs text-blue-700">
-              <strong>Pro tip:</strong> Connect multiple stores to track competitor prices across all your brands from one dashboard.
-            </p>
-          </div>
         </section>
 
-        {/* Billing */}
+        {/* --- Billing --- */}
         {primaryStore?.stripe_customer_id && (
           <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
             <h2 className="font-bold text-base mb-4">Billing</h2>
-            <p className="text-sm text-gray-500 mb-4">Manage your subscription, invoices, and payment method.</p>
             <button
               onClick={async () => {
                 const res = await fetch('/api/stripe/portal', { method: 'POST' })
@@ -254,48 +225,23 @@ export default function SettingsPage() {
           </section>
         )}
 
-        {/* Danger zone */}
-        <section className="bg-white rounded-2xl border border-red-100 p-6 mb-4">
-          <h2 className="font-bold text-base text-red-600 mb-4">Danger Zone</h2>
-          {!deleteConfirm ? (
-            <button
-              onClick={() => setDeleteConfirm(true)}
-              className="text-sm font-semibold text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors"
-            >
-              Delete account
-            </button>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-red-600 font-medium">Are you sure? This cannot be undone.</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setDeleteConfirm(false)}
-                  className="text-sm font-semibold border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    await supabase.auth.signOut()
-                    router.push('/')
-                  }}
-                  className="text-sm font-semibold bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  Yes, delete my account
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Sign out */}
-        <button
-          onClick={handleSignOut}
-          className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
-        >
+        <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
           Sign out
         </button>
       </div>
     </div>
+  )
+}
+
+// 2. Huvudkomponenten exporteras med Suspense
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-sm text-gray-400">Loading settings...</div>
+      </div>
+    }>
+      <SettingsContent />
+    </Suspense>
   )
 }
