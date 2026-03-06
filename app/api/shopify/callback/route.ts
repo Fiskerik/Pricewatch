@@ -4,6 +4,8 @@ import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase'
 import crypto from 'crypto'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
   const { data: { user } } = await supabase.auth.getUser()
@@ -17,6 +19,11 @@ export async function GET(req: NextRequest) {
   
   // Verify state (CSRF protection)
   const cookieState = req.cookies.get('shopify_oauth_state')?.value
+  console.log('[shopify/callback] OAuth state check', {
+    hasStateParam: Boolean(state),
+    hasCookieState: Boolean(cookieState),
+    shop,
+  })
   if (state !== cookieState) {
     return NextResponse.redirect(new URL('/dashboard?error=invalid_state', req.url))
   }
@@ -31,6 +38,7 @@ export async function GET(req: NextRequest) {
     .digest('hex')
   
   if (hash !== hmac) {
+    console.log('[shopify/callback] HMAC validation failed', { shop })
     return NextResponse.redirect(new URL('/dashboard?error=invalid_hmac', req.url))
   }
 
