@@ -90,7 +90,7 @@ export default function VatCountrySelector({ countryCode, onChange }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-lg z-50 w-52 py-1.5 max-h-72 overflow-y-auto">
+        <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-lg z-50 w-[min(20rem,calc(100vw-2rem))] sm:w-52 py-1.5 max-h-72 overflow-y-auto">
           <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
             Select country / VAT rate
           </div>

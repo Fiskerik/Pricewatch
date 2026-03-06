@@ -6,11 +6,13 @@ import { applyVat, removeVat } from '@/lib/vat'
 
 interface ScrapedCandidate { metric: string; source: string; price: number; currency: string }
 interface PendingPrice {
+  rawPrice: number
   price: number
   currency: string
   includesVat: boolean
   candidates: ScrapedCandidate[]
   selectedMetric: string | null
+  decimalShift: number
 }
 
 interface GroupedCandidate extends ScrapedCandidate {
@@ -67,6 +69,7 @@ interface Props {
   pendingPrices: Record<string, PendingPrice>
   onPendingVatIncludedChange: (competitorId: string, includesVat: boolean) => void
   onPendingMetricChange: (competitorId: string, metric: string) => void
+  onPendingDecimalShift: (competitorId: string, decimalShift: number) => void
   onConfirmPrice: (competitorId: string, includesVat: boolean) => void
   onRejectPrice: (competitorId: string) => void
 }
@@ -131,7 +134,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 export default function ProductCard({
   product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
-  fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onConfirmPrice, onRejectPrice,
+  fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
   const competitors = product.competitor_urls ?? []
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
@@ -361,6 +364,35 @@ export default function ProductCard({
                             VAT included in fetched price
                           </label>
                         )}
+
+                        <div className="mt-3 rounded-lg border border-amber-200/80 bg-white/70 px-2.5 py-2">
+                          <div className="text-[11px] font-semibold text-amber-800 mb-1">
+                            Decimal position
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => onPendingDecimalShift(comp.id, pending.decimalShift + 1)}
+                              className="text-xs font-semibold border border-amber-300 text-amber-700 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-colors"
+                              title="Move decimal one step to the left"
+                            >
+                              Modify
+                            </button>
+                            {pending.decimalShift !== 0 && (
+                              <button
+                                type="button"
+                                onClick={() => onPendingDecimalShift(comp.id, 0)}
+                                className="text-xs font-semibold border border-gray-300 text-gray-600 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
+                                title="Reset decimal position"
+                              >
+                                Reset
+                              </button>
+                            )}
+                            <span className="text-[11px] text-gray-500">
+                              shift: {pending.decimalShift}
+                            </span>
+                          </div>
+                        </div>
 
                         {groupedCandidates.length > 1 && (
                           <div className="mt-3 space-y-1.5">
