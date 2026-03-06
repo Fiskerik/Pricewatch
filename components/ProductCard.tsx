@@ -285,28 +285,32 @@ export default function ProductCard({
                             </span>
                           )}
                         </div>
+
+                        {/*
+                          Always show the raw fetched price here.
+                          The VAT checkbox below only records *whether* this price
+                          already includes VAT — it must not change this number.
+                        */}
                         <div className="text-lg font-extrabold text-gray-900">
-                          {formatMoney(
-                            showVat
-                              ? (pending.includesVat ? pending.price : applyVat(pending.price, vatRate))
-                              : (pending.includesVat ? removeVat(pending.price, vatRate) : pending.price),
-                            normalizeCurrencyCode(pending.currency),
-                          )}
+                          {formatMoney(pending.price, normalizeCurrencyCode(pending.currency))}
                           {vatRate > 0 && (
                             <span className="text-xs font-normal text-gray-400 ml-1">
                               {pending.includesVat ? 'includes VAT' : 'excludes VAT'}
                             </span>
                           )}
                         </div>
-                        <label className="inline-flex items-center gap-2 mt-1.5 text-xs text-gray-700 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={pending.includesVat}
-                            onChange={(e) => onPendingVatIncludedChange(comp.id, e.target.checked)}
-                            className="rounded border-gray-300"
-                          />
-                          VAT included in fetched price
-                        </label>
+
+                        {vatRate > 0 && (
+                          <label className="inline-flex items-center gap-2 mt-1.5 text-xs text-gray-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={pending.includesVat}
+                              onChange={(e) => onPendingVatIncludedChange(comp.id, e.target.checked)}
+                              className="rounded border-gray-300"
+                            />
+                            VAT included in fetched price
+                          </label>
+                        )}
 
                         {pending.candidates.length > 1 && (
                           <div className="mt-3 space-y-1.5">
