@@ -8,7 +8,7 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { productId, title, ourPrice, currencyCode } = await req.json()
+  const { productId, title, ourPrice, currencyCode, imageUrl } = await req.json()
   if (!productId || !title) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   const { data: product, error: productError } = await supabase
@@ -42,6 +42,7 @@ export async function PATCH(req: NextRequest) {
       title: String(title).trim(),
       our_price: typeof ourPrice === 'number' && Number.isFinite(ourPrice) ? ourPrice : null,
       currency_code: normalizeCurrencyCode(currencyCode),
+      image_url: typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null,
     })
     .eq('id', productId)
     .select()
