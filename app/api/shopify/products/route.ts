@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
   const { data: { user } } = await supabase.auth.getUser()
@@ -9,6 +11,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const storeId = searchParams.get('storeId')
+  console.log('[shopify/products] request', { hasStoreId: Boolean(storeId) })
 
   if (!storeId) {
     return NextResponse.json({ error: 'storeId required' }, { status: 400 })
