@@ -91,18 +91,7 @@ function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: string 
     ? candidates.find(c => c.metric === preferredMetric)
     : null
 
-  const scoreCandidate = (candidate: ScrapedCandidate): number => {
-    const haystack = `${candidate.metric} ${candidate.source}`.toLowerCase()
-    let score = 0
-
-    if (/sale|discount|redprice|nowprice|currentprice|campaign/.test(haystack)) score += 40
-    if (/compare_at|oldprice|listprice|originalprice|strikethrough|regular/.test(haystack)) score -= 20
-    if (/jsonld|meta|productjson|selector/.test(haystack)) score += 5
-
-    return score
-  }
-
-  const picked = preferred ?? [...candidates].sort((a, b) => scoreCandidate(b) - scoreCandidate(a))[0]
+  const picked = preferred ?? candidates[0]
   return {
     price: picked.price,
     scrapedCurrency: picked.currency,
@@ -116,10 +105,6 @@ function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: string 
 const PRICE_SELECTORS = [
   '[itemprop="price"]',
   'meta[property="product:price:amount"]',
-  '.ProductPrice-module--price',
-  '.ProductPrice-module--discountPrice',
-  '[data-testid*="product-price"]',
-  '[data-testid*="sale-price"]',
   '[data-product-price]', '[data-price]', '[data-testid*="price"]',
   '.product-price-now', '.product-price__value', '.product__price-now',
   '.wt-text-title-03', // Etsy main price
@@ -217,56 +202,15 @@ async function extractFromHtml(
       const variants = Array.isArray(parsed?.variants) ? parsed.variants : []
       const currency = parsed?.currency || detectCurrency('', url)
       variants.forEach((variant: any, index: number) => {
-        const variantCurrency = typeof variant?.currency === 'string' ? variant.currency : currency
-
-        const addShopifyProductCandidate = (metric: string, value: unknown) => {
-          if (typeof value !== 'number' || value <= 0) return
-          const amount = Number.isInteger(value) ? value / 100 : value
-          addCandidate({
-            metric,
-            source: 'Shopify ProductJson',
-            price: amount,
-            currency: variantCurrency,
-          })
-        }
-
-        addShopifyProductCandidate(`shopify.productJson.variants[${index}].price`, variant?.price)
-        addShopifyProductCandidate(`shopify.productJson.variants[${index}].compare_at_price`, variant?.compare_at_price)
-
-        if (Array.isArray(variant?.presentment_prices)) {
-          variant.presentment_prices.forEach((presentment: any, presentmentIndex: number) => {
-            const presentmentPrice = presentment?.price
-            const presentmentCompareAt = presentment?.compare_at_price
-            const presentmentCurrency =
-              (typeof presentmentPrice?.currency_code === 'string' && presentmentPrice.currency_code)
-              || (typeof presentmentCompareAt?.currency_code === 'string' && presentmentCompareAt.currency_code)
-              || variantCurrency
-
-            if (typeof presentmentPrice?.amount === 'string') {
-              const parsed = parsePriceText(presentmentPrice.amount)
-              if (parsed) {
-                addCandidate({
-                  metric: `shopify.productJson.variants[${index}].presentment_prices[${presentmentIndex}].price.amount`,
-                  source: 'Shopify ProductJson presentment',
-                  price: parsed,
-                  currency: presentmentCurrency,
-                })
-              }
-            }
-
-            if (typeof presentmentCompareAt?.amount === 'string') {
-              const parsed = parsePriceText(presentmentCompareAt.amount)
-              if (parsed) {
-                addCandidate({
-                  metric: `shopify.productJson.variants[${index}].presentment_prices[${presentmentIndex}].compare_at_price.amount`,
-                  source: 'Shopify ProductJson presentment',
-                  price: parsed,
-                  currency: presentmentCurrency,
-                })
-              }
-            }
-          })
-        }
+        const cents = variant?.price
+        if (typeof cents !== 'number' || cents <= 0) return
+        const amount = Number.isInteger(cents) ? cents / 100 : cents
+        addCandidate({
+          metric: `shopify.productJson.variants[${index}].price`,
+          source: 'Shopify ProductJson',
+          price: amount,
+          currency,
+        })
       })
     } catch {
       // ignore malformed block
@@ -288,39 +232,100 @@ async function extractFromHtml(
     }
   }
 
+  // ── H&M (__NEXT_DATA__ + fixed regex) ─────────────────────────────────────
   if (url.includes('hm.com')) {
+    // Strategy 1: Parse __NEXT_DATA__ — H&M is a Next.js SSR app that embeds
+    // the full product state here. Walk the JSON tree and collect any object
+    // shaped like H&M's internal price model: { value, currencyIso } or
+    // { formattedValue, currencyIso }.
+    const nextDataMatch = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i)
+    if (nextDataMatch) {
+      try {
+        const nextData = JSON.parse(nextDataMatch[1])
+
+        const extractHmPriceObj = (obj: any, metricName: string) => {
+          if (!obj || typeof obj !== 'object') return
+          // Accept numeric or string values
+          const rawVal = obj.value ?? obj.formattedValue ?? obj.price
+          const curr: string = obj.currencyIso ?? obj.currency ?? obj.currencyCode ?? ''
+          if (rawVal != null && curr) {
+            const amount = typeof rawVal === 'number'
+              ? rawVal
+              : parsePriceText(String(rawVal))
+            if (amount) addCandidate({ metric: metricName, source: 'HM __NEXT_DATA__', price: amount, currency: curr })
+          }
+        }
+
+        // Recursively walk — max depth 20 to stay fast
+        const walk = (obj: any, path: string, depth: number): void => {
+          if (!obj || typeof obj !== 'object' || depth > 20) return
+          if (Array.isArray(obj)) {
+            obj.forEach((item, i) => walk(item, `${path}[${i}]`, depth + 1))
+            return
+          }
+          // Named price keys H&M uses
+          if ('redPrice' in obj)      extractHmPriceObj(obj.redPrice, `hm.nextData.${path}.redPrice`)
+          if ('whitePrice' in obj)    extractHmPriceObj(obj.whitePrice, `hm.nextData.${path}.whitePrice`)
+          if ('salesPrice' in obj)    extractHmPriceObj(obj.salesPrice, `hm.nextData.${path}.salesPrice`)
+          if ('originalPrice' in obj) extractHmPriceObj(obj.originalPrice, `hm.nextData.${path}.originalPrice`)
+          if ('regularPrice' in obj && typeof obj.regularPrice === 'string') {
+            const amount = parsePriceText(obj.regularPrice)
+            const curr = obj.currency ?? detectCurrency(obj.regularPrice, url)
+            if (amount && curr) addCandidate({ metric: `hm.nextData.${path}.regularPrice`, source: 'HM __NEXT_DATA__', price: amount, currency: curr })
+          }
+          for (const key of Object.keys(obj)) {
+            if (typeof obj[key] === 'object') walk(obj[key], `${path}.${key}`, depth + 1)
+          }
+        }
+        walk(nextData, 'root', 0)
+      } catch {
+        // ignore malformed __NEXT_DATA__
+      }
+    }
+
+    // Strategy 2: Regex fallback on the raw HTML.
+    // The original [^}]* broke on any multi-line JSON object. [\s\S]*? handles
+    // newlines and also matches whether value or formattedValue comes first.
     const hmPatterns: Array<{ re: RegExp; metricPrefix: string; source: string }> = [
       {
-        re: /"redPrice"\s*:\s*\{[^}]*"value"\s*:\s*"?([\d.,]+)"?[^}]*"currencyIso"\s*:\s*"([A-Z]{3})"/gi,
-        metricPrefix: 'hm.redPrice',
-        source: 'HM product data redPrice',
+        // Sale / reduced price (red tag in H&M UI)
+        re: /"redPrice"\s*:\s*\{[\s\S]*?"(?:value|formattedValue)"\s*:\s*"?([\d.,]+)"?[\s\S]*?"currencyIso"\s*:\s*"([A-Z]{3})"/gi,
+        metricPrefix: 'hm.regex.redPrice',
+        source: 'HM redPrice regex',
       },
       {
-        re: /"whitePrice"\s*:\s*\{[^}]*"value"\s*:\s*"?([\d.,]+)"?[^}]*"currencyIso"\s*:\s*"([A-Z]{3})"/gi,
-        metricPrefix: 'hm.whitePrice',
-        source: 'HM product data whitePrice',
+        // Regular price (white tag)
+        re: /"whitePrice"\s*:\s*\{[\s\S]*?"(?:value|formattedValue)"\s*:\s*"?([\d.,]+)"?[\s\S]*?"currencyIso"\s*:\s*"([A-Z]{3})"/gi,
+        metricPrefix: 'hm.regex.whitePrice',
+        source: 'HM whitePrice regex',
       },
       {
-        re: /"(?:price|salePrice|currentPrice)"\s*:\s*"?([\d.,]+)"?\s*,\s*"currency"\s*:\s*"([A-Z]{3})"/gi,
-        metricPrefix: 'hm.price',
-        source: 'HM inline state',
+        // Currency next to value in the same object (any price key)
+        re: /"(?:salesPrice|currentPrice|salePrice|price)"\s*:\s*\{[\s\S]*?"(?:value|formattedValue)"\s*:\s*"?([\d.,]+)"?[\s\S]*?"currencyIso"\s*:\s*"([A-Z]{3})"/gi,
+        metricPrefix: 'hm.regex.price',
+        source: 'HM generic price regex',
+      },
+      {
+        // Flat inline: "price": "299", "currency": "SEK"
+        re: /"(?:price|salePrice|currentPrice|salesPrice)"\s*:\s*"([\d.,]+)"\s*,\s*"currency(?:Iso)?"\s*:\s*"([A-Z]{3})"/gi,
+        metricPrefix: 'hm.regex.flat',
+        source: 'HM flat inline price',
       },
     ]
 
     hmPatterns.forEach(({ re, metricPrefix, source }) => {
       let match: RegExpExecArray | null
-      let index = 0
-      while ((match = re.exec(html)) !== null && index < 20) {
+      let idx = 0
+      while ((match = re.exec(html)) !== null && idx < 10) {
         const amount = parsePriceText(match[1])
-        if (!amount) continue
-
+        if (!amount) { idx++; continue }
         addCandidate({
-          metric: `${metricPrefix}[${index}]`,
+          metric: `${metricPrefix}[${idx}]`,
           source,
           price: amount,
           currency: match[2] || detectCurrency(match[0], url),
         })
-        index += 1
+        idx++
       }
     })
   }
@@ -357,51 +362,6 @@ async function extractFromHtml(
         }
       }
     }
-
-    const genericAttributeSelectors = ['[data-price-amount]', '[data-amount]', '[data-sale-price]', '[data-current-price]', '[aria-label*="price" i]']
-    for (const selector of genericAttributeSelectors) {
-      const el = $(selector).first()
-      const raw =
-        el.attr('data-price-amount')
-        || el.attr('data-amount')
-        || el.attr('data-sale-price')
-        || el.attr('data-current-price')
-        || el.attr('aria-label')
-        || ''
-
-      if (raw && !isNonProductPrice(raw)) {
-        const amount = parsePriceText(raw)
-        if (amount) {
-          addCandidate({
-            metric: `generic-attr:${selector}`,
-            source: `Generic attribute (${selector})`,
-            price: amount,
-            currency: detectCurrency(raw, url),
-          })
-        }
-      }
-    }
-
-    const bodyText = $('body').text().replace(/\s+/g, ' ')
-    const unlabeledPricePatterns = [
-      /(?:US\$|CA\$|AU\$|€|£|¥|\$|SEK|NOK|DKK|EUR|USD|GBP|CAD|AUD|JPY)\s?\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{2})?/gi,
-      /\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{2})?\s?(?:SEK|NOK|DKK|EUR|USD|GBP|CAD|AUD|JPY|kr)/gi,
-    ]
-
-    unlabeledPricePatterns.forEach((pattern, patternIndex) => {
-      const matches = bodyText.match(pattern) || []
-      matches.slice(0, 20).forEach((raw, matchIndex) => {
-        if (isNonProductPrice(raw)) return
-        const amount = parsePriceText(raw)
-        if (!amount) return
-        addCandidate({
-          metric: `unlabeled-text:${patternIndex}:${matchIndex}`,
-          source: 'Unlabeled text pattern',
-          price: amount,
-          currency: detectCurrency(raw, url),
-        })
-      })
-    })
   } catch {
     // ignore selector pass errors
   }
@@ -426,6 +386,7 @@ async function renderWithScraperApi(url: string): Promise<string> {
   apiUrl.searchParams.set('render', 'true')
   apiUrl.searchParams.set('premium', 'true')
   if (url.includes('etsy.com')) apiUrl.searchParams.set('wait_for_selector', '.wt-text-title-03')
+  if (url.includes('hm.com')) apiUrl.searchParams.set('wait_for_selector', '[class*="Price"],[class*="price"],[data-testid*="price"]')
 
   const res = await fetch(apiUrl.toString(), { signal: AbortSignal.timeout(60_000) })
   return res.text()
@@ -538,63 +499,16 @@ async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOption
     const currency = typeof data?.currency === 'string' ? data.currency : detectCurrency('', url)
     const candidates: ScrapedCandidate[] = []
 
-    const addCandidate = (metric: string, source: string, value: unknown, currencyCode: string) => {
-      if (value === null || value === undefined) return
-
-      let amount: number | null = null
-      if (typeof value === 'number' && !Number.isNaN(value)) {
-        amount = Number.isInteger(value) ? value / 100 : value
-      } else if (typeof value === 'string') {
-        const parsed = parsePriceText(value)
-        if (parsed) amount = parsed
-      }
-
-      if (!amount || amount <= 0) return
-      if (candidates.some(c => c.metric === metric)) return
-
-      candidates.push({
-        metric,
-        source,
-        price: amount,
-        currency: currencyCode,
-      })
-    }
-
-    addCandidate('shopify.js.price', 'Shopify .js endpoint', data?.price, currency)
-    addCandidate('shopify.js.price_min', 'Shopify .js endpoint', data?.price_min, currency)
-    addCandidate('shopify.js.price_max', 'Shopify .js endpoint', data?.price_max, currency)
-    addCandidate('shopify.js.compare_at_price', 'Shopify .js endpoint', data?.compare_at_price, currency)
-    addCandidate('shopify.js.compare_at_price_min', 'Shopify .js endpoint', data?.compare_at_price_min, currency)
-    addCandidate('shopify.js.compare_at_price_max', 'Shopify .js endpoint', data?.compare_at_price_max, currency)
-
     variants.forEach((variant: any, index: number) => {
-      const variantCurrency = typeof variant?.currency === 'string' ? variant.currency : currency
-      addCandidate(`shopify.js.variants[${index}].price`, 'Shopify .js endpoint', variant?.price, variantCurrency)
-      addCandidate(`shopify.js.variants[${index}].compare_at_price`, 'Shopify .js endpoint', variant?.compare_at_price, variantCurrency)
-
-      if (Array.isArray(variant?.presentment_prices)) {
-        variant.presentment_prices.forEach((presentment: any, presentmentIndex: number) => {
-          const presentmentPrice = presentment?.price
-          const presentmentCompareAt = presentment?.compare_at_price
-          const presentmentCurrency =
-            (typeof presentmentPrice?.currency_code === 'string' && presentmentPrice.currency_code)
-            || (typeof presentmentCompareAt?.currency_code === 'string' && presentmentCompareAt.currency_code)
-            || variantCurrency
-
-          addCandidate(
-            `shopify.js.variants[${index}].presentment_prices[${presentmentIndex}].price.amount`,
-            'Shopify .js presentment',
-            presentmentPrice?.amount,
-            presentmentCurrency,
-          )
-          addCandidate(
-            `shopify.js.variants[${index}].presentment_prices[${presentmentIndex}].compare_at_price.amount`,
-            'Shopify .js presentment',
-            presentmentCompareAt?.amount,
-            presentmentCurrency,
-          )
-        })
-      }
+      const cents = variant?.price
+      if (typeof cents !== 'number' || cents <= 0) return
+      const amount = Number.isInteger(cents) ? cents / 100 : cents
+      candidates.push({
+        metric: `shopify.js.variants[${index}].price`,
+        source: 'Shopify .js endpoint',
+        price: amount,
+        currency,
+      })
     })
 
     const picked = pickCandidate(candidates, options?.preferredMetric)
@@ -609,8 +523,48 @@ async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOption
   }
 }
 
+// ─── H&M direct SSR fetch ─────────────────────────────────────────────────────
+// H&M pages are Next.js SSR: the initial HTML often contains __NEXT_DATA__ with
+// full price info, so we can skip the JS renderer for a cheaper/faster first try.
+// If the response looks like a bot-challenge page (short / missing __NEXT_DATA__)
+// we fall back to the normal JS-render path automatically.
+async function scrapeHmProductDirect(url: string, options?: ScrapePriceOptions): Promise<ExtractResult> {
+  if (!url.includes('hm.com')) {
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+  }
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(20_000),
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+    })
+    if (!res.ok) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    const html = await res.text()
+    // Bail if the page looks like a JS-challenge or empty shell
+    if (!html.includes('__NEXT_DATA__')) {
+      return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    }
+    return extractFromHtml(html, url, options)
+  } catch {
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+  }
+}
+
 export async function scrapePrice(url: string, _targetCurrency?: string, options?: ScrapePriceOptions): Promise<ScrapeResult> {
   const allCandidates: ScrapedCandidate[] = []
+
+  // ── H&M: try a cheap direct SSR fetch before spending a JS-render credit ──
+  if (url.includes('hm.com')) {
+    const hmDirect = await scrapeHmProductDirect(url, options)
+    for (const c of hmDirect.candidates) {
+      if (!allCandidates.some(e => e.metric === c.metric)) allCandidates.push(c)
+    }
+  }
 
   // For Shopify product URLs, always try the .js endpoint first (fast, no render cost).
   // This gives base-currency prices from the store backend.
