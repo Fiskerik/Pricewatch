@@ -12,6 +12,33 @@ interface PendingPrice {
   candidates: ScrapedCandidate[]
   selectedMetric: string | null
 }
+
+interface GroupedCandidate extends ScrapedCandidate {
+  metrics: string[]
+}
+
+function groupCandidatesByValue(candidates: ScrapedCandidate[]): GroupedCandidate[] {
+  const grouped = new Map<string, GroupedCandidate>()
+
+  for (const candidate of candidates) {
+    const currency = normalizeCurrencyCode(candidate.currency)
+    const key = `${currency}:${candidate.price.toFixed(4)}`
+    const existing = grouped.get(key)
+
+    if (existing) {
+      existing.metrics.push(candidate.metric)
+      continue
+    }
+
+    grouped.set(key, {
+      ...candidate,
+      currency,
+      metrics: [candidate.metric],
+    })
+  }
+
+  return Array.from(grouped.values())
+}
 interface ConvertedCurrencyResponse {
   product?: { id: string; currency_code: string; our_price: number | null }
   competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
@@ -186,6 +213,7 @@ export default function ProductCard({
           {competitors.map(comp => {
             const isFetching = !!fetchingIds[comp.id]
             const pending = pendingPrices[comp.id]
+            const groupedCandidates = pending ? groupCandidatesByValue(pending.candidates) : []
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
             const includesVat = competitorVatIncluded[comp.id] ?? comp.vat_included ?? true
             const priceWithVat = comp.last_price !== null
@@ -312,13 +340,13 @@ export default function ProductCard({
                           </label>
                         )}
 
-                        {pending.candidates.length > 1 && (
+                        {groupedCandidates.length > 1 && (
                           <div className="mt-3 space-y-1.5">
                             <div className="text-[11px] font-semibold text-amber-800">
                               Multiple prices were found — choose the value to track from now on:
                             </div>
                             <div className="space-y-1">
-                              {pending.candidates.map((candidate) => (
+                              {groupedCandidates.map((candidate) => (
                                 <label
                                   key={candidate.metric}
                                   className="flex items-center justify-between gap-3 text-xs rounded-lg border border-amber-200/80 px-2.5 py-1.5 bg-white/70 cursor-pointer"
@@ -327,7 +355,7 @@ export default function ProductCard({
                                     <input
                                       type="radio"
                                       name={`metric-${comp.id}`}
-                                      checked={pending.selectedMetric === candidate.metric}
+                                      checked={pending.selectedMetric ? candidate.metrics.includes(pending.selectedMetric) : false}
                                       onChange={() => onPendingMetricChange(comp.id, candidate.metric)}
                                     />
                                     <span className="font-medium text-gray-800">
