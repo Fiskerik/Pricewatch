@@ -202,15 +202,56 @@ async function extractFromHtml(
       const variants = Array.isArray(parsed?.variants) ? parsed.variants : []
       const currency = parsed?.currency || detectCurrency('', url)
       variants.forEach((variant: any, index: number) => {
-        const cents = variant?.price
-        if (typeof cents !== 'number' || cents <= 0) return
-        const amount = Number.isInteger(cents) ? cents / 100 : cents
-        addCandidate({
-          metric: `shopify.productJson.variants[${index}].price`,
-          source: 'Shopify ProductJson',
-          price: amount,
-          currency,
-        })
+        const variantCurrency = typeof variant?.currency === 'string' ? variant.currency : currency
+
+        const addShopifyProductCandidate = (metric: string, value: unknown) => {
+          if (typeof value !== 'number' || value <= 0) return
+          const amount = Number.isInteger(value) ? value / 100 : value
+          addCandidate({
+            metric,
+            source: 'Shopify ProductJson',
+            price: amount,
+            currency: variantCurrency,
+          })
+        }
+
+        addShopifyProductCandidate(`shopify.productJson.variants[${index}].price`, variant?.price)
+        addShopifyProductCandidate(`shopify.productJson.variants[${index}].compare_at_price`, variant?.compare_at_price)
+
+        if (Array.isArray(variant?.presentment_prices)) {
+          variant.presentment_prices.forEach((presentment: any, presentmentIndex: number) => {
+            const presentmentPrice = presentment?.price
+            const presentmentCompareAt = presentment?.compare_at_price
+            const presentmentCurrency =
+              (typeof presentmentPrice?.currency_code === 'string' && presentmentPrice.currency_code)
+              || (typeof presentmentCompareAt?.currency_code === 'string' && presentmentCompareAt.currency_code)
+              || variantCurrency
+
+            if (typeof presentmentPrice?.amount === 'string') {
+              const parsed = parsePriceText(presentmentPrice.amount)
+              if (parsed) {
+                addCandidate({
+                  metric: `shopify.productJson.variants[${index}].presentment_prices[${presentmentIndex}].price.amount`,
+                  source: 'Shopify ProductJson presentment',
+                  price: parsed,
+                  currency: presentmentCurrency,
+                })
+              }
+            }
+
+            if (typeof presentmentCompareAt?.amount === 'string') {
+              const parsed = parsePriceText(presentmentCompareAt.amount)
+              if (parsed) {
+                addCandidate({
+                  metric: `shopify.productJson.variants[${index}].presentment_prices[${presentmentIndex}].compare_at_price.amount`,
+                  source: 'Shopify ProductJson presentment',
+                  price: parsed,
+                  currency: presentmentCurrency,
+                })
+              }
+            }
+          })
+        }
       })
     } catch {
       // ignore malformed block
@@ -400,16 +441,63 @@ async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOption
     const currency = typeof data?.currency === 'string' ? data.currency : detectCurrency('', url)
     const candidates: ScrapedCandidate[] = []
 
-    variants.forEach((variant: any, index: number) => {
-      const cents = variant?.price
-      if (typeof cents !== 'number' || cents <= 0) return
-      const amount = Number.isInteger(cents) ? cents / 100 : cents
+    const addCandidate = (metric: string, source: string, value: unknown, currencyCode: string) => {
+      if (value === null || value === undefined) return
+
+      let amount: number | null = null
+      if (typeof value === 'number' && !Number.isNaN(value)) {
+        amount = Number.isInteger(value) ? value / 100 : value
+      } else if (typeof value === 'string') {
+        const parsed = parsePriceText(value)
+        if (parsed) amount = parsed
+      }
+
+      if (!amount || amount <= 0) return
+      if (candidates.some(c => c.metric === metric)) return
+
       candidates.push({
-        metric: `shopify.js.variants[${index}].price`,
-        source: 'Shopify .js endpoint',
+        metric,
+        source,
         price: amount,
-        currency,
+        currency: currencyCode,
       })
+    }
+
+    addCandidate('shopify.js.price', 'Shopify .js endpoint', data?.price, currency)
+    addCandidate('shopify.js.price_min', 'Shopify .js endpoint', data?.price_min, currency)
+    addCandidate('shopify.js.price_max', 'Shopify .js endpoint', data?.price_max, currency)
+    addCandidate('shopify.js.compare_at_price', 'Shopify .js endpoint', data?.compare_at_price, currency)
+    addCandidate('shopify.js.compare_at_price_min', 'Shopify .js endpoint', data?.compare_at_price_min, currency)
+    addCandidate('shopify.js.compare_at_price_max', 'Shopify .js endpoint', data?.compare_at_price_max, currency)
+
+    variants.forEach((variant: any, index: number) => {
+      const variantCurrency = typeof variant?.currency === 'string' ? variant.currency : currency
+      addCandidate(`shopify.js.variants[${index}].price`, 'Shopify .js endpoint', variant?.price, variantCurrency)
+      addCandidate(`shopify.js.variants[${index}].compare_at_price`, 'Shopify .js endpoint', variant?.compare_at_price, variantCurrency)
+
+      if (Array.isArray(variant?.presentment_prices)) {
+        variant.presentment_prices.forEach((presentment: any, presentmentIndex: number) => {
+          const presentmentPrice = presentment?.price
+          const presentmentCompareAt = presentment?.compare_at_price
+          const presentmentCurrency =
+            (typeof presentmentPrice?.currency_code === 'string' && presentmentPrice.currency_code)
+            || (typeof presentmentCompareAt?.currency_code === 'string' && presentmentCompareAt.currency_code)
+            || variantCurrency
+
+          addCandidate(
+            `shopify.js.variants[${index}].presentment_prices[${presentmentIndex}].price.amount`,
+            'Shopify .js presentment',
+            presentmentPrice?.amount,
+            presentmentCurrency,
+          )
+          addCandidate(
+            `shopify.js.variants[${index}].presentment_prices[${presentmentIndex}].compare_at_price.amount`,
+            'Shopify .js presentment',
+            presentmentCompareAt?.amount,
+            presentmentCurrency,
+          )
+        })
+      }
     })
 
     const picked = pickCandidate(candidates, options?.preferredMetric)
