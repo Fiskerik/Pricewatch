@@ -4,7 +4,14 @@ import { Product, CompetitorUrl, PriceHistory } from '@/types'
 import { formatMoney, SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/currency'
 import { applyVat, removeVat } from '@/lib/vat'
 
-interface PendingPrice { price: number; currency: string; includesVat: boolean }
+interface ScrapedCandidate { metric: string; source: string; price: number; currency: string }
+interface PendingPrice {
+  price: number
+  currency: string
+  includesVat: boolean
+  candidates: ScrapedCandidate[]
+  selectedMetric: string | null
+}
 interface ConvertedCurrencyResponse {
   product?: { id: string; currency_code: string; our_price: number | null }
   competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
@@ -26,6 +33,7 @@ interface Props {
   fetchingIds: Record<string, boolean>
   pendingPrices: Record<string, PendingPrice>
   onPendingVatIncludedChange: (competitorId: string, includesVat: boolean) => void
+  onPendingMetricChange: (competitorId: string, metric: string) => void
   onConfirmPrice: (competitorId: string, includesVat: boolean) => void
   onRejectPrice: (competitorId: string) => void
 }
@@ -90,7 +98,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 export default function ProductCard({
   product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
-  fetchingIds, pendingPrices, onPendingVatIncludedChange, onConfirmPrice, onRejectPrice,
+  fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onConfirmPrice, onRejectPrice,
 }: Props) {
   const competitors = product.competitor_urls ?? []
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
@@ -299,6 +307,35 @@ export default function ProductCard({
                           />
                           VAT included in fetched price
                         </label>
+
+                        {pending.candidates.length > 1 && (
+                          <div className="mt-3 space-y-1.5">
+                            <div className="text-[11px] font-semibold text-amber-800">
+                              Multiple prices were found — choose the value to track from now on:
+                            </div>
+                            <div className="space-y-1">
+                              {pending.candidates.map((candidate) => (
+                                <label
+                                  key={candidate.metric}
+                                  className="flex items-center justify-between gap-3 text-xs rounded-lg border border-amber-200/80 px-2.5 py-1.5 bg-white/70 cursor-pointer"
+                                >
+                                  <span className="inline-flex items-center gap-2">
+                                    <input
+                                      type="radio"
+                                      name={`metric-${comp.id}`}
+                                      checked={pending.selectedMetric === candidate.metric}
+                                      onChange={() => onPendingMetricChange(comp.id, candidate.metric)}
+                                    />
+                                    <span className="font-medium text-gray-800">
+                                      {formatMoney(candidate.price, normalizeCurrencyCode(candidate.currency))}
+                                    </span>
+                                  </span>
+                                  <span className="text-[10px] text-gray-500">{candidate.source}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-2 shrink-0 self-start mt-1 sm:mt-0">
                         <button

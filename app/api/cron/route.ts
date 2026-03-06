@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const { data: competitors, error } = await admin
     .from('competitor_urls')
     .select(`
-      id, url, label, last_price, last_price_currency,
+      id, url, label, last_price, last_price_currency, selected_price_metric,
       products (
         id, title, our_price, currency_code,
         stores (
@@ -52,8 +52,10 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      const { price, scrapedCurrency } = await scrapePrice(comp.url, product?.currency_code ?? 'USD')
-      console.log('[cron] scrape result', { competitorId: comp.id, url: comp.url, price, scrapedCurrency })
+      const { price, scrapedCurrency, metricUsed, matchedPreferredMetric } = await scrapePrice(comp.url, product?.currency_code ?? 'USD', {
+        preferredMetric: comp.selected_price_metric ?? null,
+      })
+      console.log('[cron] scrape result', { competitorId: comp.id, url: comp.url, price, scrapedCurrency, metricUsed, matchedPreferredMetric })
       results.checked++
 
       // Update last_checked_at regardless

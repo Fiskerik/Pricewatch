@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { competitorId } = await req.json()
+  const { competitorId, preferredMetric } = await req.json()
   if (!competitorId) return NextResponse.json({ error: 'Missing competitorId' }, { status: 400 })
 
   const { data: competitor, error: fetchError } = await supabase
@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
 
   const targetCurrency = (competitor as any)?.products?.currency_code ?? 'USD'
   const now = new Date().toISOString()
-  const result = await scrapePrice(competitor.url, targetCurrency)
+  const savedMetric = (competitor as any)?.selected_price_metric ?? (typeof preferredMetric === 'string' ? preferredMetric : null)
+  const result = await scrapePrice(competitor.url, targetCurrency, { preferredMetric: savedMetric })
 
   console.log('[competitors/fetch]', {
     competitorId,
@@ -41,6 +42,10 @@ export async function POST(req: NextRequest) {
     currency: result.scrapedCurrency,
     method: result.method,
     error: result.error,
+    metricUsed: result.metricUsed,
+    preferredMetric: savedMetric,
+    matchedPreferredMetric: result.matchedPreferredMetric,
+    candidateCount: result.candidates.length,
   })
 
   const updatePayload: Record<string, unknown> = { last_checked_at: now }
@@ -70,5 +75,8 @@ export async function POST(req: NextRequest) {
     competitor: updated,
     scrapeMethod: result.method,
     scrapeError: result.error ?? null,
+    candidates: result.candidates,
+    metricUsed: result.metricUsed,
+    matchedPreferredMetric: result.matchedPreferredMetric,
   })
 }
