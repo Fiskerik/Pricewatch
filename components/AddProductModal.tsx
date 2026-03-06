@@ -37,6 +37,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
   const [title, setTitle] = useState(product?.title ?? '')
   const [ourPrice, setOurPrice] = useState(product?.our_price !== null && product?.our_price !== undefined ? String(product.our_price) : '')
   const [currencyCode, setCurrencyCode] = useState(product?.currency_code ?? 'USD')
+  const [imageUrl, setImageUrl] = useState(product?.image_url ?? '')
   
   // Data state
   const [stores, setStores] = useState<Store[]>([])
@@ -125,6 +126,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
     const shopifyProduct = shopifyProducts.find(p => p.shopify_product_id === selectedShopifyProduct)
     if (shopifyProduct) {
       setTitle(shopifyProduct.title)
+      setImageUrl(shopifyProduct.image_url ?? '')
       if (shopifyProduct.price) {
         setOurPrice(String(shopifyProduct.price))
       }
@@ -151,7 +153,8 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
             productId: product.id, 
             title, 
             currencyCode, 
-            ourPrice: ourPrice ? parseFloat(ourPrice) : null 
+            ourPrice: ourPrice ? parseFloat(ourPrice) : null,
+            imageUrl: imageUrl.trim() || null,
           }
         : { 
             storeId: selectedStoreId, 
@@ -160,7 +163,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
             ourPrice: ourPrice ? parseFloat(ourPrice) : null,
             shopifyProductId: shopifyProduct?.shopify_product_id ?? null,
             handle: shopifyProduct?.handle ?? null,
-            imageUrl: shopifyProduct?.image_url ?? null,
+            imageUrl: imageUrl.trim() || (shopifyProduct?.image_url ?? null),
           }
 
       const res = await fetch(endpoint, {
@@ -228,6 +231,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
                   setSelectedShopifyProduct('')
                   setTitle('')
                   setOurPrice('')
+                  setImageUrl('')
                 }}
                 className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
                 required
@@ -357,6 +361,22 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
               className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
               disabled={inputMethod === 'shopify' && !selectedShopifyProduct}
             />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
+              Product Image URL (optional)
+            </label>
+            <input
+              type="url"
+              value={imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              placeholder="https://..."
+              className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Manual products can use your own image. Shopify products are prefilled and can be overridden.
+            </p>
           </div>
 
           {/* Error Message */}

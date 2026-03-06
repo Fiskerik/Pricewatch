@@ -13,6 +13,7 @@ import { applyVat } from '@/lib/vat'
 
 interface PendingPrice { price: number; currency: string; includesVat: boolean }
 type ViewMode = 'products' | 'competitors'
+type ProductLayout = 'list' | 'grid'
 
 interface Props {
   user: User
@@ -28,6 +29,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [addCompetitorFor, setAddCompetitorFor] = useState<string | null>(null)
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
 
   // VAT state lifted up — avoids flash-of-no-VAT in ProductCard
   const [vatCountryCode, setVatCountryCode] = useState<string>('SE')
@@ -38,6 +40,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [viewMode, setViewMode] = useState<ViewMode>('products')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null)
+  const [productLayout, setProductLayout] = useState<ProductLayout>('list')
+  const [draggingProductId, setDraggingProductId] = useState<string | null>(null)
 
   // Background fetch
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
@@ -52,7 +56,34 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
     const storedVat = window.localStorage.getItem('pricewatch:showVat')
     if (storedVat === 'false') setShowVat(false)
+
+    const storedLayout = window.localStorage.getItem('pricewatch:productLayout')
+    if (storedLayout === 'grid' || storedLayout === 'list') setProductLayout(storedLayout)
+
+    const storedOrderRaw = window.localStorage.getItem('pricewatch:productOrder')
+    if (storedOrderRaw) {
+      try {
+        const storedOrder: string[] = JSON.parse(storedOrderRaw)
+        setProducts(prev => {
+          const indexById = new Map(storedOrder.map((id, idx) => [id, idx]))
+          return [...prev].sort((a, b) => {
+            const aIdx = indexById.get(a.id)
+            const bIdx = indexById.get(b.id)
+            if (aIdx == null && bIdx == null) return 0
+            if (aIdx == null) return 1
+            if (bIdx == null) return -1
+            return aIdx - bIdx
+          })
+        })
+      } catch {
+        console.log('[dashboard] failed to parse product order, keeping default order')
+      }
+    }
   }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem('pricewatch:productOrder', JSON.stringify(products.map(p => p.id)))
+  }, [products])
 
   const handleVatCountryChange = (code: string, rate: number) => {
     setVatCountryCode(code)
@@ -195,6 +226,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
   const handleProductAdded = (product: Product) => { setProducts(prev => [product, ...prev]); setShowAddProduct(false) }
 
+  const handleProductUpdated = (updated: Product) => {
+    setProducts(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p))
+    setEditingProduct(null)
+  }
+
   const handleCompetitorAdded = (productId: string, competitor: CompetitorUrl) => {
     setProducts(prev => prev.map(p =>
       p.id !== productId ? p : { ...p, competitor_urls: [...(p.competitor_urls ?? []), competitor] }
@@ -221,8 +257,40 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n })
   }
 
-  const handleProductCurrencyUpdated = (productId: string, currencyCode: string) => {
-    setProducts(prev => prev.map(p => p.id === productId ? { ...p, currency_code: currencyCode } : p))
+  const handleProductCurrencyUpdated = (productId: string, currencyCode: string, converted?: {
+    product?: { id: string; currency_code: string; our_price: number | null }
+    competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
+  }) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id !== productId) return p
+      const convertedById = new Map((converted?.competitors ?? []).map(c => [c.id, c]))
+      const convertedProduct = converted?.product
+
+      return {
+        ...p,
+        currency_code: convertedProduct?.currency_code ?? currencyCode,
+        our_price: convertedProduct?.our_price ?? p.our_price,
+        competitor_urls: (p.competitor_urls ?? []).map(c => {
+          const match = convertedById.get(c.id)
+          return match
+            ? { ...c, last_price: match.last_price, last_price_currency: match.last_price_currency }
+            : c
+        }),
+      }
+    }))
+  }
+
+  const moveProduct = (fromId: string, toId: string) => {
+    if (fromId === toId) return
+    setProducts(prev => {
+      const fromIndex = prev.findIndex(p => p.id === fromId)
+      const toIndex = prev.findIndex(p => p.id === toId)
+      if (fromIndex < 0 || toIndex < 0) return prev
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
   }
 
   return (
@@ -313,6 +381,28 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full sm:flex-1 sm:max-w-xs border border-gray-200 rounded-xl px-3.5 py-2 text-sm outline-none focus:border-black transition-colors bg-white"
           />
+          {viewMode === 'products' && (
+            <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5 w-full sm:w-auto">
+              <button
+                onClick={() => {
+                  setProductLayout('list')
+                  window.localStorage.setItem('pricewatch:productLayout', 'list')
+                }}
+                className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-colors ${productLayout === 'list' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                List view
+              </button>
+              <button
+                onClick={() => {
+                  setProductLayout('grid')
+                  window.localStorage.setItem('pricewatch:productLayout', 'grid')
+                }}
+                className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-colors ${productLayout === 'grid' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                Grid view
+              </button>
+            </div>
+          )}
           <span className="hidden sm:inline text-xs text-gray-400 sm:ml-auto">
             {viewMode === 'products' ? `${filteredProducts.length} products` : `${competitorGroups.length} competitors`}
           </span>
@@ -335,34 +425,45 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 No products match &quot;{searchQuery}&quot;
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className={productLayout === 'grid' ? 'grid grid-cols-1 xl:grid-cols-2 gap-3' : 'space-y-3'}>
                 {filteredProducts.map(product => (
-                  <ProductCard
+                  <div
                     key={product.id}
-                    product={product}
-                    isExpanded={expandedProduct === product.id}
-                    onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
-                    onEditProduct={() => {}}
-                    onAddCompetitor={() => setAddCompetitorFor(product.id)}
-                    onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
-                    onRefreshCompetitor={triggerBackgroundFetch}
-                    onCurrencyUpdated={handleProductCurrencyUpdated}
-                    competitorLimit={limits.competitors}
-                    showVat={showVat}
-                    vatRate={vatRate}
-                    competitorVatIncluded={{}}
-                    fetchingIds={fetchingIds}
-                    pendingPrices={pendingPrices}
-                    onPendingVatIncludedChange={(competitorId, includesVat) => {
-                      setPendingPrices(prev => {
-                        const current = prev[competitorId]
-                        if (!current) return prev
-                        return { ...prev, [competitorId]: { ...current, includesVat } }
-                      })
+                    draggable
+                    onDragStart={() => setDraggingProductId(product.id)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (draggingProductId) moveProduct(draggingProductId, product.id)
+                      setDraggingProductId(null)
                     }}
-                    onConfirmPrice={handleConfirmPrice}
-                    onRejectPrice={handleRejectPrice}
-                  />
+                    onDragEnd={() => setDraggingProductId(null)}
+                  >
+                    <ProductCard
+                      product={product}
+                      isExpanded={expandedProduct === product.id}
+                      onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
+                      onEditProduct={() => setEditingProduct(product)}
+                      onAddCompetitor={() => setAddCompetitorFor(product.id)}
+                      onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
+                      onRefreshCompetitor={triggerBackgroundFetch}
+                      onCurrencyUpdated={handleProductCurrencyUpdated}
+                      competitorLimit={limits.competitors}
+                      showVat={showVat}
+                      vatRate={vatRate}
+                      competitorVatIncluded={{}}
+                      fetchingIds={fetchingIds}
+                      pendingPrices={pendingPrices}
+                      onPendingVatIncludedChange={(competitorId, includesVat) => {
+                        setPendingPrices(prev => {
+                          const current = prev[competitorId]
+                          if (!current) return prev
+                          return { ...prev, [competitorId]: { ...current, includesVat } }
+                        })
+                      }}
+                      onConfirmPrice={handleConfirmPrice}
+                      onRejectPrice={handleRejectPrice}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -500,6 +601,15 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           storeId={store?.id ?? ''}
           onClose={() => setShowAddProduct(false)}
           onAdded={handleProductAdded}
+        />
+      )}
+      {editingProduct && (
+        <AddProductModal
+          mode="edit"
+          product={editingProduct}
+          onClose={() => setEditingProduct(null)}
+          onAdded={() => {}}
+          onUpdated={handleProductUpdated}
         />
       )}
     </div>
