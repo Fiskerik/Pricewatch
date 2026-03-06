@@ -275,6 +275,14 @@ export default function ProductCard({
                       title="Edit competitor"
                     >✏️</button>
 
+                    <a
+                      href={comp.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-400 hover:text-black transition-colors text-sm"
+                      title="Open competitor product page"
+                    >↗</a>
+
                     {/* Price display */}
                     {!isFetching && priceWithVat !== null ? (
                       <div className="text-right shrink-0">
