@@ -10,6 +10,8 @@ interface Store {
   store_name: string | null
   is_primary: boolean
   created_at: string
+  plan: string | null
+  stripe_customer_id?: string | null
 }
 
 export default function SettingsPage() {
