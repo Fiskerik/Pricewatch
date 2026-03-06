@@ -425,31 +425,71 @@ async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOption
 }
 
 export async function scrapePrice(url: string, _targetCurrency?: string, options?: ScrapePriceOptions): Promise<ScrapeResult> {
+  const allCandidates: ScrapedCandidate[] = []
+
+  // For Shopify product URLs, always try the .js endpoint first (fast, no render cost).
+  // This gives base-currency prices from the store backend.
   if (url.includes('/products/')) {
     const shopifyJsonResult = await scrapeShopifyProductJson(url, options)
-    if (shopifyJsonResult.price !== null) {
-      const selected = shopifyJsonResult.candidates.find(c => c.price === shopifyJsonResult.price && c.currency === shopifyJsonResult.scrapedCurrency)
+    allCandidates.push(...shopifyJsonResult.candidates)
+  }
+
+  // Always run JS rendering so we capture the price actually shown on the page,
+  // including any currency-app conversions (e.g. a Shopify store showing AUD
+  // while the .js endpoint returns USD base prices).
+  try {
+    const html = await renderJs(url)
+    const htmlResult = await extractFromHtml(html, url, { preferredMetric: options?.preferredMetric })
+    for (const c of htmlResult.candidates) {
+      // Deduplicate — don't add if we already have a candidate with the same metric key
+      if (!allCandidates.some(e => e.metric === c.metric)) {
+        allCandidates.push(c)
+      }
+    }
+  } catch (err) {
+    // JS rendering failed — if we have Shopify .js candidates, carry on; otherwise fail.
+    if (allCandidates.length === 0) {
       return {
-        ...shopifyJsonResult,
-        method: 'direct',
-        metricUsed: selected?.metric ?? null,
+        price: null,
+        scrapedCurrency: null,
+        method: 'failed',
+        candidates: [],
+        metricUsed: null,
+        matchedPreferredMetric: false,
+        error: String(err),
       }
     }
   }
 
-  try {
-    const html = await renderJs(url)
-    const result = await extractFromHtml(html, url, { preferredMetric: options?.preferredMetric })
-    if (result.price !== null) {
-      const selected = result.candidates.find(c => c.price === result.price && c.currency === result.scrapedCurrency)
-      return {
-        ...result,
-        method: 'js-render',
-        metricUsed: selected?.metric ?? null,
-      }
+  if (allCandidates.length === 0) {
+    return {
+      price: null,
+      scrapedCurrency: null,
+      method: 'failed',
+      candidates: [],
+      metricUsed: null,
+      matchedPreferredMetric: false,
+      error: 'Price not found',
     }
-    return { price: null, scrapedCurrency: null, method: 'failed', candidates: [], metricUsed: null, matchedPreferredMetric: false, error: 'Price not found' }
-  } catch (err) {
-    return { price: null, scrapedCurrency: null, method: 'failed', candidates: [], metricUsed: null, matchedPreferredMetric: false, error: String(err) }
+  }
+
+  const picked = pickCandidate(allCandidates, options?.preferredMetric)
+  const selected = allCandidates.find(c => c.price === picked.price && c.currency === picked.scrapedCurrency)
+
+  console.log('[scraper] final pick', {
+    url,
+    preferredMetric: options?.preferredMetric ?? null,
+    metricUsed: selected?.metric ?? null,
+    matchedPreferred: picked.matchedPreferredMetric,
+    totalCandidates: allCandidates.length,
+  })
+
+  return {
+    price: picked.price,
+    scrapedCurrency: picked.scrapedCurrency,
+    candidates: allCandidates,
+    matchedPreferredMetric: picked.matchedPreferredMetric,
+    method: allCandidates.some(c => c.source.startsWith('Shopify')) ? 'direct' : 'js-render',
+    metricUsed: selected?.metric ?? null,
   }
 }
