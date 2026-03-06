@@ -305,6 +305,51 @@ async function extractFromHtml(
         }
       }
     }
+
+    const genericAttributeSelectors = ['[data-price-amount]', '[data-amount]', '[data-sale-price]', '[data-current-price]', '[aria-label*="price" i]']
+    for (const selector of genericAttributeSelectors) {
+      const el = $(selector).first()
+      const raw =
+        el.attr('data-price-amount')
+        || el.attr('data-amount')
+        || el.attr('data-sale-price')
+        || el.attr('data-current-price')
+        || el.attr('aria-label')
+        || ''
+
+      if (raw && !isNonProductPrice(raw)) {
+        const amount = parsePriceText(raw)
+        if (amount) {
+          addCandidate({
+            metric: `generic-attr:${selector}`,
+            source: `Generic attribute (${selector})`,
+            price: amount,
+            currency: detectCurrency(raw, url),
+          })
+        }
+      }
+    }
+
+    const bodyText = $('body').text().replace(/\s+/g, ' ')
+    const unlabeledPricePatterns = [
+      /(?:US\$|CA\$|AU\$|€|£|¥|\$|SEK|NOK|DKK|EUR|USD|GBP|CAD|AUD|JPY)\s?\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{2})?/gi,
+      /\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{2})?\s?(?:SEK|NOK|DKK|EUR|USD|GBP|CAD|AUD|JPY|kr)/gi,
+    ]
+
+    unlabeledPricePatterns.forEach((pattern, patternIndex) => {
+      const matches = bodyText.match(pattern) || []
+      matches.slice(0, 20).forEach((raw, matchIndex) => {
+        if (isNonProductPrice(raw)) return
+        const amount = parsePriceText(raw)
+        if (!amount) return
+        addCandidate({
+          metric: `unlabeled-text:${patternIndex}:${matchIndex}`,
+          source: 'Unlabeled text pattern',
+          price: amount,
+          currency: detectCurrency(raw, url),
+        })
+      })
+    })
   } catch {
     // ignore selector pass errors
   }
