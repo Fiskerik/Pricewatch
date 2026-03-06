@@ -91,7 +91,18 @@ function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: string 
     ? candidates.find(c => c.metric === preferredMetric)
     : null
 
-  const picked = preferred ?? candidates[0]
+  const scoreCandidate = (candidate: ScrapedCandidate): number => {
+    const haystack = `${candidate.metric} ${candidate.source}`.toLowerCase()
+    let score = 0
+
+    if (/sale|discount|redprice|nowprice|currentprice|campaign/.test(haystack)) score += 40
+    if (/compare_at|oldprice|listprice|originalprice|strikethrough|regular/.test(haystack)) score -= 20
+    if (/jsonld|meta|productjson|selector/.test(haystack)) score += 5
+
+    return score
+  }
+
+  const picked = preferred ?? [...candidates].sort((a, b) => scoreCandidate(b) - scoreCandidate(a))[0]
   return {
     price: picked.price,
     scrapedCurrency: picked.currency,
@@ -105,6 +116,10 @@ function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: string 
 const PRICE_SELECTORS = [
   '[itemprop="price"]',
   'meta[property="product:price:amount"]',
+  '.ProductPrice-module--price',
+  '.ProductPrice-module--discountPrice',
+  '[data-testid*="product-price"]',
+  '[data-testid*="sale-price"]',
   '[data-product-price]', '[data-price]', '[data-testid*="price"]',
   '.product-price-now', '.product-price__value', '.product__price-now',
   '.wt-text-title-03', // Etsy main price
@@ -271,6 +286,43 @@ async function extractFromHtml(
         })
       }
     }
+  }
+
+  if (url.includes('hm.com')) {
+    const hmPatterns: Array<{ re: RegExp; metricPrefix: string; source: string }> = [
+      {
+        re: /"redPrice"\s*:\s*\{[^}]*"value"\s*:\s*"?([\d.,]+)"?[^}]*"currencyIso"\s*:\s*"([A-Z]{3})"/gi,
+        metricPrefix: 'hm.redPrice',
+        source: 'HM product data redPrice',
+      },
+      {
+        re: /"whitePrice"\s*:\s*\{[^}]*"value"\s*:\s*"?([\d.,]+)"?[^}]*"currencyIso"\s*:\s*"([A-Z]{3})"/gi,
+        metricPrefix: 'hm.whitePrice',
+        source: 'HM product data whitePrice',
+      },
+      {
+        re: /"(?:price|salePrice|currentPrice)"\s*:\s*"?([\d.,]+)"?\s*,\s*"currency"\s*:\s*"([A-Z]{3})"/gi,
+        metricPrefix: 'hm.price',
+        source: 'HM inline state',
+      },
+    ]
+
+    hmPatterns.forEach(({ re, metricPrefix, source }) => {
+      let match: RegExpExecArray | null
+      let index = 0
+      while ((match = re.exec(html)) !== null && index < 20) {
+        const amount = parsePriceText(match[1])
+        if (!amount) continue
+
+        addCandidate({
+          metric: `${metricPrefix}[${index}]`,
+          source,
+          price: amount,
+          currency: match[2] || detectCurrency(match[0], url),
+        })
+        index += 1
+      }
+    })
   }
 
   const metaPrice = html.match(/<meta[^>]+(?:property|name)="(?:product:price:amount|og:price:amount|price)"[^>]+content="([^"]+)"/i)
