@@ -52,19 +52,54 @@ export async function GET(req: NextRequest) {
       throw new Error('No access token received')
     }
 
-    // Save store with access token
-    const { data: store, error } = await supabaseAdmin()
+    // Check if this store is already connected
+    const { data: existingStore } = await supabaseAdmin()
       .from('stores')
-      .update({ 
-        shop_domain: shop, 
-        access_token: access_token 
-      })
+      .select('id')
       .eq('user_id', user.id)
-      .select()
+      .eq('shop_domain', shop)
       .single()
 
-    if (error || !store) {
-      throw new Error('Failed to save store')
+    let store
+    
+    if (existingStore) {
+      // Update existing store
+      const { data: updatedStore, error } = await supabaseAdmin()
+        .from('stores')
+        .update({ 
+          access_token: access_token,
+          store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
+        })
+        .eq('id', existingStore.id)
+        .select()
+        .single()
+
+      if (error) throw new Error('Failed to update store')
+      store = updatedStore
+    } else {
+      // Check if user has any stores
+      const { data: userStores } = await supabaseAdmin()
+        .from('stores')
+        .select('id')
+        .eq('user_id', user.id)
+
+      const isFirstStore = !userStores || userStores.length === 0
+
+      // Create new store
+      const { data: newStore, error } = await supabaseAdmin()
+        .from('stores')
+        .insert({ 
+          user_id: user.id,
+          shop_domain: shop,
+          access_token: access_token,
+          store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
+          is_primary: isFirstStore, // First store is primary
+        })
+        .select()
+        .single()
+
+      if (error) throw new Error('Failed to create store')
+      store = newStore
     }
 
     // Fetch and sync products
@@ -80,7 +115,7 @@ export async function GET(req: NextRequest) {
 
     const { products } = await productsResponse.json()
 
-    // Insert products
+    // Insert/update products
     for (const product of products || []) {
       const mainVariant = product.variants?.[0]
       await supabaseAdmin()
@@ -99,12 +134,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Clear state cookie
-    const response = NextResponse.redirect(new URL('/dashboard?connected=true', req.url))
+    const response = NextResponse.redirect(new URL('/dashboard/settings?connected=true', req.url))
     response.cookies.delete('shopify_oauth_state')
     
     return response
   } catch (err) {
     console.error('Shopify callback error:', err)
-    return NextResponse.redirect(new URL('/dashboard?error=shopify', req.url))
+    return NextResponse.redirect(new URL('/dashboard/settings?error=shopify', req.url))
   }
 }
