@@ -4,22 +4,20 @@ export type CurrencyCode = string
 
 function parsePriceText(raw: string): number | null {
   const cleaned = raw
-    .replace(/\u00a0/g, ' ')   // non-breaking space
-    .replace(/\u202f/g, ' ')   // narrow no-break space
+    .replace(/\u00a0/g, ' ')
+    .replace(/\u202f/g, ' ')
     .replace(/\s+/g, '')
     .replace(/[^\d,\.]/g, '')
 
   if (!cleaned || cleaned.length < 1) return null
 
   const lastComma = cleaned.lastIndexOf(',')
-  const lastDot   = cleaned.lastIndexOf('.')
+  const lastDot = cleaned.lastIndexOf('.')
 
   let normalized = cleaned
   if (lastComma > lastDot) {
-    // European: 28.989,05 or 1.499 → strip dots, comma becomes decimal
     normalized = normalized.replace(/\./g, '').replace(',', '.')
   } else {
-    // US/UK: 28,989.05 → strip commas
     normalized = normalized.replace(/,/g, '')
   }
 
@@ -54,7 +52,6 @@ function detectCurrency(raw: string, url: string): CurrencyCode {
       if (url.includes('/se-')) return 'SEK'
       if (url.includes('/no-')) return 'NOK'
       if (url.includes('/dk-')) return 'DKK'
-      if (url.includes('/uk-') || url.includes('/gb-')) return 'GBP'
       return 'EUR'
     }
   } catch { /* ignore */ }
@@ -71,14 +68,14 @@ function isNonProductPrice(raw: string): boolean {
 
 const PRICE_SELECTORS = [
   '[itemprop="price"]',
+  'meta[property="product:price:amount"]',
   '[data-product-price]', '[data-price]', '[data-testid*="price"]',
   '.product-price-now', '.product-price__value', '.product__price-now',
-  '[class*="price-now"]', '[class*="priceNow"]', '[class*="PriceNow"]',
-  '[class*="currentPrice"]', '[class*="salesPrice"]',
-  '.product__price', '.price__regular', '.price-item--regular',
-  '[class*="product-price"]',
-  'span.price', '.price', '[class*="price"]', '[id*="price"]',
-  '.wt-text-title-03', // Etsy specific price selector
+  '.wt-text-title-03', // Etsy main price
+  '.wt-text-title-smaller', // Etsy discount price
+  '.price-item--regular', // Shopify
+  '.price-item--sale', // Shopify sale
+  'span.price', '.price',
 ]
 
 async function extractFromHtml(
@@ -86,60 +83,53 @@ async function extractFromHtml(
   url: string,
 ): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
 
-  const etsyHostCheck = (() => { try { return new URL(url).hostname.includes('etsy.com') } catch { return false } })()
-  
-  // ── Optimized Etsy/General JSON-LD extraction ────────────────
+  // 1. JSON-LD (Standard för Shopify, WooCommerce, Etsy)
   const jsonLdRe = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
   let m: RegExpExecArray | null
   while ((m = jsonLdRe.exec(html)) !== null) {
     try {
-      const parsed = JSON.parse(m[1])
+      const parsed = JSON.parse(m[1].trim())
       const items = Array.isArray(parsed) ? parsed : [parsed]
       for (const item of items) {
-        if ((item?.['@type'] === 'Product' || item?.offers)) {
-          const offers = item.offers
-          if (offers) {
-            // AggregateOffer (Price range)
-            if (offers['@type'] === 'AggregateOffer') {
-              const low = offers.lowPrice ?? offers.price
-              const currency = offers.priceCurrency ?? offers.lowPriceCurrency
-              if (low != null) {
-                const amount = parseFloat(String(low))
-                if (!isNaN(amount) && amount > 0) return { price: amount, scrapedCurrency: currency || 'EUR' }
-              }
-            }
-            // Single Offer
-            if (offers.price != null) {
-              const amount = parseFloat(String(offers.price))
-              if (!isNaN(amount) && amount > 0) return { price: amount, scrapedCurrency: offers.priceCurrency || 'EUR' }
-            }
+        // Kolla både Product och Offer direkt (vissa butiker separerar dem)
+        const offer = item.offers || (item['@type'] === 'Offer' ? item : null)
+        if (offer) {
+          const amount = offer.lowPrice || offer.price
+          const currency = offer.priceCurrency || offer.lowPriceCurrency
+          if (amount) {
+            const n = parseFloat(String(amount))
+            if (!isNaN(n)) return { price: n, scrapedCurrency: currency || detectCurrency('', url) }
           }
         }
       }
     } catch (e) { /* ignore */ }
   }
 
-  // ── Meta tags (og:price:amount) ───────────────────────────
-  const ogPriceMatch = html.match(/<meta[^>]+property="(?:og|product|price):price:amount"[^>]+content="([^"]+)"/i)
-  const ogCurrMatch  = html.match(/<meta[^>]+property="(?:og|product|price):price:currency"[^>]+content="([^"]+)"/i)
-  if (ogPriceMatch) {
-    const amount = parseFloat(ogPriceMatch[1].replace(/[^0-9.]/g, ''))
-    if (!isNaN(amount) && amount > 0) {
-      return { price: amount, scrapedCurrency: ogCurrMatch?.[1] ?? detectCurrency('', url) }
+  // 2. Etsy Specific - Deep check in INITIAL_STATE (om JS-render är seg)
+  if (url.includes('etsy.com')) {
+    const stateMatch = html.match(/"price":\s*{\s*"amount":\s*(\d+),\s*"divisor":\s*(\d+)[^}]*"currency_code":\s*"([^"]+)"/i)
+    if (stateMatch) {
+      const amount = parseInt(stateMatch[1]) / parseInt(stateMatch[2])
+      return { price: amount, scrapedCurrency: stateMatch[3] }
     }
   }
 
-  // ── CSS selectors via cheerio ───────────────────────
+  // 3. Meta Tags (Viktigt för Social Commerce)
+  const metaPrice = html.match(/<meta[^>]+(?:property|name)="(?:product:price:amount|og:price:amount|price)"[^>]+content="([^"]+)"/i)
+  const metaCurr = html.match(/<meta[^>]+(?:property|name)="(?:product:price:currency|og:price:currency|currency)"[^>]+content="([^"]+)"/i)
+  if (metaPrice) {
+    const n = parseFloat(metaPrice[1].replace(/[^0-9.]/g, ''))
+    if (!isNaN(n)) return { price: n, scrapedCurrency: metaCurr ? metaCurr[1] : detectCurrency('', url) }
+  }
+
+  // 4. CSS Selectors (Sista utvägen)
   try {
     const { load } = await import('cheerio')
     const $ = load(html)
     for (const selector of PRICE_SELECTORS) {
-      for (const el of $(selector).toArray()) {
-        const node = $(el)
-        const content = node.attr('content') ?? node.attr('data-product-price')
-          ?? node.attr('data-price') ?? node.text()
-        const raw = content.trim()
-        if (!raw || isNonProductPrice(raw)) continue
+      const el = $(selector).first()
+      const raw = el.attr('content') || el.attr('data-price') || el.text().trim()
+      if (raw && !isNonProductPrice(raw)) {
         const amount = parsePriceText(raw)
         if (amount) return { price: amount, scrapedCurrency: detectCurrency(raw, url) }
       }
@@ -153,29 +143,27 @@ async function extractFromHtml(
 
 async function renderWithScraperApi(url: string): Promise<string> {
   const key = process.env.SCRAPER_API_KEY
-  if (!key) throw new Error('SCRAPER_API_KEY not set')
-
+  if (!key) throw new Error('SCRAPER_API_KEY missing')
   const apiUrl = new URL('http://api.scraperapi.com')
   apiUrl.searchParams.set('api_key', key)
   apiUrl.searchParams.set('url', url)
   apiUrl.searchParams.set('render', 'true')
-  apiUrl.searchParams.set('premium', 'true') // Essential for Etsy
-  apiUrl.searchParams.set('wait_for_selector', '.wt-text-title-03')
-
-  const res = await fetch(apiUrl.toString(), { signal: AbortSignal.timeout(45_000) })
-  if (!res.ok) throw new Error(`ScraperAPI ${res.status}`)
+  apiUrl.searchParams.set('premium', 'true')
+  if (url.includes('etsy.com')) apiUrl.searchParams.set('wait_for_selector', '.wt-text-title-03')
+  
+  const res = await fetch(apiUrl.toString(), { signal: AbortSignal.timeout(60_000) })
   return res.text()
 }
 
 async function renderWithBrowserless(url: string): Promise<string> {
   const key = process.env.BROWSERLESS_API_KEY
+  if (!key) throw new Error('BROWSERLESS_API_KEY missing')
   const body = JSON.stringify({
     url,
-    waitFor: 7000, // Increased for Etsy
-    gotoOptions: { waitUntil: 'networkidle2', timeout: 30000 },
-    setExtraHTTPHeaders: { 'Accept-Language': 'sv-SE,sv;q=0.9' },
+    waitFor: 8000,
+    gotoOptions: { waitUntil: 'networkidle0', timeout: 40000 },
+    setExtraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' }
   })
-
   const res = await fetch(`https://production-sfo.browserless.io/content?token=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -189,65 +177,43 @@ async function renderJs(url: string): Promise<string> {
     { name: 'ScraperAPI', fn: renderWithScraperApi, key: process.env.SCRAPER_API_KEY },
     { name: 'Browserless', fn: renderWithBrowserless, key: process.env.BROWSERLESS_API_KEY },
   ]
-
   const configured = providers.filter(p => p.key)
   for (const provider of configured) {
     try {
       return await provider.fn(url)
     } catch (err) {
-      console.warn(`[scraper] ${provider.name} failed: ${err}`)
+      console.warn(`[scraper] ${provider.name} failed for ${url}`)
     }
   }
-  throw new Error('All rendering providers failed')
+  throw new Error('All JS renderers failed')
 }
-
-// ─── Main export ──────────────────────────────────────────────────────────────
 
 // ─── URL normalisation ────────────────────────────────────────────────────────
 
-/**
- * Clean tracking junk from URLs before storing/scraping.
- * Etsy: keep only the listing path, drop all query params.
- * Generic: strip common tracking params (utm_*, ref, fbclid …).
- */
 export function cleanUrl(rawUrl: string): string {
-  let url: URL
-  try { url = new URL(rawUrl.trim()) } catch { return rawUrl.trim() }
-
-  const host = url.hostname.replace(/^www\./, '')
-
-  // Etsy — canonical form is /listing/<id>/<slug>, no query needed
-  if (host === 'etsy.com' || host.endsWith('.etsy.com')) {
-    const m = url.pathname.match(/\/listing\/\d+\/[^/]+/)
-    if (m) return `https://www.etsy.com${m[0]}`
-    return `https://www.etsy.com${url.pathname}`
+  try {
+    const url = new URL(rawUrl.trim())
+    const host = url.hostname.replace(/^www\./, '')
+    if (host.includes('etsy.com')) {
+      const m = url.pathname.match(/\/listing\/\d+/)
+      if (m) return `https://www.etsy.com${m[0]}`
+    }
+    const TRACKING = ['utm_source', 'utm_medium', 'utm_campaign', 'fbclid', 'gclid', 'ref']
+    TRACKING.forEach(p => url.searchParams.delete(p))
+    return url.origin + url.pathname
+  } catch {
+    return rawUrl.trim()
   }
-
-  const TRACKING_PARAMS = [
-    'utm_source','utm_medium','utm_campaign','utm_term','utm_content',
-    'ref','external','cns','sts','content_source','logging_key','ls',
-    'fbclid','gclid','msclkid','mc_cid','mc_eid','_ga','_gl',
-  ]
-  for (const p of TRACKING_PARAMS) url.searchParams.delete(p)
-  url.hash = ''
-  return url.toString()
 }
-
-// ─── Domain helpers ───────────────────────────────────────────────────────────
 
 export function getDomain(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
 }
 
-/** Sites known to require JS rendering */
 export const JS_RENDERED_DOMAINS = new Set([
   'power.se', 'power.no', 'power.dk', 'power.fi',
-  'elgiganten.se', 'elgiganten.dk',
-  'mediamarkt.se', 'mediamarkt.de', 'mediamarkt.nl',
-  'webhallen.com',
-  'inet.se',
-  'onoff.se',
-  'etsy.com',
+  'elgiganten.se', 'elgiganten.dk', 'mediamarkt.se',
+  'webhallen.com', 'inet.se', 'etsy.com', 'shopee.com', 'lazada.com'
 ])
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -256,56 +222,21 @@ export interface ScrapeResult {
   price: number | null
   scrapedCurrency: CurrencyCode | null
   method: 'direct' | 'js-render' | 'failed'
-  provider?: string
   error?: string
 }
 
-/**
- * Scrapes price from a given URL.
- * Accepts targetCurrency as second argument to match API route requirements.
- */
-export async function scrapePrice(
-  url: string, 
-  _targetCurrency?: string // Lade till detta argumentet igen
-): Promise<ScrapeResult> {
+export async function scrapePrice(url: string, _targetCurrency?: string): Promise<ScrapeResult> {
   const domain = getDomain(url)
-
-  // 1. Försök med JS-rendering direkt för kända tunga sidor (som Etsy)
-  if (JS_RENDERED_DOMAINS.has(domain)) {
-    try {
-      const html = await renderJs(url)
-      const result = await extractFromHtml(html, url)
-      if (result.price !== null) {
-        return { ...result, method: 'js-render' }
-      }
-    } catch (err) {
-      console.warn(`[scraper] Initial JS render failed for ${domain}:`, err)
-    }
-  }
-
-  // 2. Fallback eller Direct fetch för övriga
+  
+  // Vi använder rendering som standard för att undvika Cloudflare-blockeringar på små butiker
   try {
-    // Om du vill implementera en direct fetch här kan du göra det, 
-    // annars kör vi rendering som standard för att vara säker
     const html = await renderJs(url)
     const result = await extractFromHtml(html, url)
-    
     if (result.price !== null) {
       return { ...result, method: 'js-render' }
     }
-
-    return { 
-      price: null, 
-      scrapedCurrency: null, 
-      method: 'failed', 
-      error: 'Price not found in HTML' 
-    }
+    return { price: null, scrapedCurrency: null, method: 'failed', error: 'Price not found' }
   } catch (err) {
-    return { 
-      price: null, 
-      scrapedCurrency: null, 
-      method: 'failed', 
-      error: String(err) 
-    }
+    return { price: null, scrapedCurrency: null, method: 'failed', error: String(err) }
   }
 }
