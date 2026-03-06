@@ -11,7 +11,14 @@ import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/componen
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
 import { applyVat } from '@/lib/vat'
 
-interface PendingPrice { price: number; currency: string; includesVat: boolean }
+interface ScrapedCandidate { metric: string; source: string; price: number; currency: string }
+interface PendingPrice {
+  price: number
+  currency: string
+  includesVat: boolean
+  candidates: ScrapedCandidate[]
+  selectedMetric: string | null
+}
 type ViewMode = 'products' | 'competitors'
 type ProductLayout = 'list' | 'grid'
 
@@ -46,6 +53,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   // Background fetch
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
+  const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const storedCountry = window.localStorage.getItem('pricewatch:vatCountry')
@@ -79,11 +87,25 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         console.log('[dashboard] failed to parse product order, keeping default order')
       }
     }
+
+    const storedMetricsRaw = window.localStorage.getItem('pricewatch:preferredMetrics')
+    if (storedMetricsRaw) {
+      try {
+        const parsed = JSON.parse(storedMetricsRaw) as Record<string, string>
+        setPreferredMetrics(parsed)
+      } catch {
+        console.log('[dashboard] failed to parse preferred metrics map')
+      }
+    }
   }, [])
 
   useEffect(() => {
     window.localStorage.setItem('pricewatch:productOrder', JSON.stringify(products.map(p => p.id)))
   }, [products])
+
+  useEffect(() => {
+    window.localStorage.setItem('pricewatch:preferredMetrics', JSON.stringify(preferredMetrics))
+  }, [preferredMetrics])
 
   const handleVatCountryChange = (code: string, rate: number) => {
     setVatCountryCode(code)
@@ -133,16 +155,30 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     fetch('/api/competitors/fetch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ competitorId }),
+      body: JSON.stringify({ competitorId, preferredMetric: preferredMetrics[competitorId] ?? null }),
     })
       .then(async res => {
         if (!res.ok) return
         const data = await res.json()
         const comp = data.competitor
         if (comp?.last_price != null) {
+          const candidates = Array.isArray(data?.candidates) ? data.candidates as ScrapedCandidate[] : []
+          const selectedMetric =
+            (typeof data?.metricUsed === 'string' && data.metricUsed)
+            || preferredMetrics[competitorId]
+            || comp?.selected_price_metric
+            || candidates[0]?.metric
+            || null
+
           setPendingPrices(prev => ({
             ...prev,
-            [competitorId]: { price: comp.last_price, currency: comp.last_price_currency ?? 'USD', includesVat: true },
+            [competitorId]: {
+              price: comp.last_price,
+              currency: comp.last_price_currency ?? 'USD',
+              includesVat: true,
+              candidates,
+              selectedMetric,
+            },
           }))
           setProducts(prev => prev.map(p => ({
             ...p,
@@ -194,6 +230,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
     setPendingPrices(prev => { const n = { ...prev }; delete n[id]; return n })
 
+    if (pending.selectedMetric) {
+      const selectedMetric = pending.selectedMetric
+      setPreferredMetrics(prev => ({ ...prev, [id]: selectedMetric }))
+    }
+
     await fetch('/api/competitors/update', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -203,6 +244,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         label: competitor.label,
         updatedPrice: finalPrice,
         updatedCurrency: finalCurrency,
+        selectedMetric: pending.selectedMetric,
       }),
     }).catch(() => {})
   }
@@ -458,6 +500,13 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                           const current = prev[competitorId]
                           if (!current) return prev
                           return { ...prev, [competitorId]: { ...current, includesVat } }
+                        })
+                      }}
+                      onPendingMetricChange={(competitorId, metric) => {
+                        setPendingPrices(prev => {
+                          const current = prev[competitorId]
+                          if (!current) return prev
+                          return { ...prev, [competitorId]: { ...current, selectedMetric: metric } }
                         })
                       }}
                       onConfirmPrice={handleConfirmPrice}

@@ -18,7 +18,7 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { competitorId, url, label, updatedPrice, updatedCurrency } = await req.json()
+  const { competitorId, url, label, updatedPrice, updatedCurrency, selectedMetric } = await req.json()
   if (!competitorId || !url) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   let normalizedUrl = ''
@@ -60,6 +60,21 @@ export async function PATCH(req: NextRequest) {
   if (error) {
     if (error.code === '23505') return NextResponse.json({ error: 'This competitor URL is already added for this product.' }, { status: 409 })
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (typeof selectedMetric === 'string' && selectedMetric.trim()) {
+    const { error: metricError } = await admin
+      .from('competitor_urls')
+      .update({ selected_price_metric: selectedMetric.trim() })
+      .eq('id', competitorId)
+
+    if (metricError) {
+      console.warn('[competitors/update] failed to persist selected_price_metric', {
+        competitorId,
+        selectedMetric,
+        error: metricError.message,
+      })
+    }
   }
 
   return NextResponse.json({ competitor })

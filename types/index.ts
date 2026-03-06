@@ -30,6 +30,7 @@ export interface CompetitorUrl {
   label: string | null
   last_price: number | null
   vat_included?: boolean | null
+  selected_price_metric?: string | null
   last_price_currency?: string | null
   last_checked_at: string | null
   last_changed_at: string | null
