@@ -32,7 +32,7 @@ interface Props {
 export default function DashboardClient({ user, store, initialProducts, initialAlerts }: Props) {
   const [products, setProducts] = useState<Product[]>(initialProducts)
   const [alerts] = useState(initialAlerts)
-  const [expandedProduct, setExpandedProduct] = useState<string | null>(null)
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
   const [addCompetitorFor, setAddCompetitorFor] = useState<string | null>(null)
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
@@ -278,7 +278,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       p.id !== productId ? p : { ...p, competitor_urls: [...(p.competitor_urls ?? []), competitor] }
     ))
     setAddCompetitorFor(null)
-    setExpandedProduct(productId)
+    setExpandedProducts(prev => ({ ...prev, [productId]: true }))
     triggerBackgroundFetch(competitor.id)
   }
 
@@ -482,8 +482,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                   >
                     <ProductCard
                       product={product}
-                      isExpanded={expandedProduct === product.id}
-                      onToggle={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
+                      isExpanded={!!expandedProducts[product.id]}
+                      onToggle={() => setExpandedProducts(prev => ({ ...prev, [product.id]: !prev[product.id] }))}
                       onEditProduct={() => setEditingProduct(product)}
                       onAddCompetitor={() => setAddCompetitorFor(product.id)}
                       onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}

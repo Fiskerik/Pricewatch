@@ -39,6 +39,12 @@ function groupCandidatesByValue(candidates: ScrapedCandidate[]): GroupedCandidat
 
   return Array.from(grouped.values())
 }
+
+function isSaleMetric(metric: string | null | undefined): boolean {
+  if (!metric) return false
+  return /sale|discount|redprice|nowprice|currentprice|campaign/i.test(metric)
+}
+
 interface ConvertedCurrencyResponse {
   product?: { id: string; currency_code: string; our_price: number | null }
   competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
@@ -216,6 +222,7 @@ export default function ProductCard({
             const groupedCandidates = pending ? groupCandidatesByValue(pending.candidates) : []
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
             const includesVat = competitorVatIncluded[comp.id] ?? comp.vat_included ?? true
+            const saleActive = isSaleMetric(pending?.selectedMetric ?? comp.selected_price_metric)
             const priceWithVat = comp.last_price !== null
               ? (showVat ? (includesVat ? comp.last_price : applyVat(comp.last_price, vatRate)) : (includesVat ? removeVat(comp.last_price, vatRate) : comp.last_price))
               : null
@@ -286,6 +293,13 @@ export default function ProductCard({
                     {/* Price display */}
                     {!isFetching && priceWithVat !== null ? (
                       <div className="text-right shrink-0">
+                        {saleActive && (
+                          <div className="mb-0.5">
+                            <span className="inline-flex items-center rounded-md bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-amber-700">
+                              SALE
+                            </span>
+                          </div>
+                        )}
                         <div className={`text-base font-extrabold tabular-nums ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
                           {formatMoney(priceWithVat, compCurrency)}
                         </div>
