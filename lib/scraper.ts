@@ -83,6 +83,40 @@ async function extractFromHtml(
   url: string,
 ): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
 
+  const normalizeAmount = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null
+    if (typeof value === 'number' && !Number.isNaN(value) && value > 0) return value
+    if (typeof value === 'string') {
+      const parsed = parsePriceText(value)
+      if (parsed) return parsed
+    }
+    return null
+  }
+
+  const extractOfferFromNode = (node: any): { price: number; currency: CurrencyCode } | null => {
+    if (!node || typeof node !== 'object') return null
+
+    const offers = node.offers || (node['@type'] === 'Offer' ? node : null)
+    const candidates = Array.isArray(offers) ? offers : offers ? [offers] : []
+    for (const offer of candidates) {
+      if (!offer || typeof offer !== 'object') continue
+      const amount = normalizeAmount(offer.lowPrice ?? offer.price)
+      if (amount) {
+        const currency = offer.priceCurrency || offer.lowPriceCurrency || detectCurrency('', url)
+        return { price: amount, currency }
+      }
+    }
+
+    if (Array.isArray(node['@graph'])) {
+      for (const entry of node['@graph']) {
+        const found = extractOfferFromNode(entry)
+        if (found) return found
+      }
+    }
+
+    return null
+  }
+
   // 1. JSON-LD (Standard för Shopify, WooCommerce, Etsy)
   const jsonLdRe = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
   let m: RegExpExecArray | null
@@ -91,18 +125,34 @@ async function extractFromHtml(
       const parsed = JSON.parse(m[1].trim())
       const items = Array.isArray(parsed) ? parsed : [parsed]
       for (const item of items) {
-        // Kolla både Product och Offer direkt (vissa butiker separerar dem)
-        const offer = item.offers || (item['@type'] === 'Offer' ? item : null)
-        if (offer) {
-          const amount = offer.lowPrice || offer.price
-          const currency = offer.priceCurrency || offer.lowPriceCurrency
-          if (amount) {
-            const n = parseFloat(String(amount))
-            if (!isNaN(n)) return { price: n, scrapedCurrency: currency || detectCurrency('', url) }
-          }
+        const found = extractOfferFromNode(item)
+        if (found) {
+          console.log(`[scraper] price found via JSON-LD for ${url}: ${found.price} ${found.currency}`)
+          return { price: found.price, scrapedCurrency: found.currency }
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch {
+      // Some stores include non-JSON script payloads; continue to fallback strategies.
+    }
+  }
+
+  // 1b. Shopify product JSON scripts often include variant prices when JSON-LD is missing/incomplete.
+  const shopifyProductJsonRe = /<script[^>]+type="application\/json"[^>]*id="ProductJson[^"']*"[^>]*>([\s\S]*?)<\/script>/gi
+  while ((m = shopifyProductJsonRe.exec(html)) !== null) {
+    try {
+      const parsed = JSON.parse(m[1].trim())
+      const variants = Array.isArray(parsed?.variants) ? parsed.variants : []
+      const firstAvailable = variants.find((v: any) => v?.available) || variants[0]
+      const cents = firstAvailable?.price
+      if (typeof cents === 'number' && cents > 0) {
+        const amount = Number.isInteger(cents) ? cents / 100 : cents
+        const currency = parsed?.currency || detectCurrency('', url)
+        console.log(`[scraper] price found via Shopify ProductJson for ${url}: ${amount} ${currency}`)
+        return { price: amount, scrapedCurrency: currency }
+      }
+    } catch {
+      // ignore malformed JSON block
+    }
   }
 
   // 2. Etsy Specific - Deep check in INITIAL_STATE (om JS-render är seg)
@@ -119,7 +169,11 @@ async function extractFromHtml(
   const metaCurr = html.match(/<meta[^>]+(?:property|name)="(?:product:price:currency|og:price:currency|currency)"[^>]+content="([^"]+)"/i)
   if (metaPrice) {
     const n = parseFloat(metaPrice[1].replace(/[^0-9.]/g, ''))
-    if (!isNaN(n)) return { price: n, scrapedCurrency: metaCurr ? metaCurr[1] : detectCurrency('', url) }
+    if (!isNaN(n)) {
+      const currency = metaCurr ? metaCurr[1] : detectCurrency('', url)
+      console.log(`[scraper] price found via meta tags for ${url}: ${n} ${currency}`)
+      return { price: n, scrapedCurrency: currency }
+    }
   }
 
   // 4. CSS Selectors (Sista utvägen)
@@ -131,7 +185,11 @@ async function extractFromHtml(
       const raw = el.attr('content') || el.attr('data-price') || el.text().trim()
       if (raw && !isNonProductPrice(raw)) {
         const amount = parsePriceText(raw)
-        if (amount) return { price: amount, scrapedCurrency: detectCurrency(raw, url) }
+        if (amount) {
+          const currency = detectCurrency(raw, url)
+          console.log(`[scraper] price found via selector ${selector} for ${url}: ${amount} ${currency}`)
+          return { price: amount, scrapedCurrency: currency }
+        }
       }
     }
   } catch { /* ignore */ }
