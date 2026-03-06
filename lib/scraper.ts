@@ -1,21 +1,3 @@
-/**
- * scraper.ts — Price scraper with JS-rendering support
- *
- * JS-rendered sites (Power.se, Elgiganten, etc.) return an empty HTML shell
- * from plain fetch(). The price is loaded via XHR/fetch in the browser AFTER
- * the JS bundle runs. To get the price you need either:
- *   A) Hit their internal JSON/API endpoint directly (fastest, fragile)
- *   B) Use a headless browser service that renders the JS first
- *
- * Provider priority:
- *   1. ScraperAPI     — SCRAPER_API_KEY       (scraperapi.com, 1000 free/mo)
- *   2. Browserless    — BROWSERLESS_API_KEY   (browserless.io, 1000 free/mo)
- *   3. ZenRows        — ZENROWS_API_KEY       (zenrows.com, 1000 free/mo)
- *   → Set ANY ONE of these in Vercel env vars to enable JS rendering.
- *
- * For sites that work without JS rendering (Komplett, most Shopify stores),
- * direct fetch is tried first and is much faster.
- */
 
 export type CurrencyCode = string
 
@@ -54,7 +36,7 @@ const CURRENCY_SYMBOL_MAP: Record<string, CurrencyCode> = {
 }
 
 const DOMAIN_CURRENCY: Record<string, CurrencyCode> = {
-  '.se': 'SEK', '.no': 'NOK', '.dk': 'DKK',
+  '.se': 'SEK', '.no': 'NOK', '.dk': 'DKK', '.fi': 'EUR',
   '.co.uk': 'GBP', '.uk': 'GBP', '.eu': 'EUR',
 }
 
@@ -67,6 +49,15 @@ function detectCurrency(raw: string, url: string): CurrencyCode {
     const host = new URL(url).hostname.toLowerCase()
     for (const [suffix, code] of Object.entries(DOMAIN_CURRENCY)) {
       if (host.endsWith(suffix)) return code
+    }
+    // Special case for Etsy localized domains
+    if (host.includes('etsy.com')) {
+      if (url.includes('/fi-')) return 'EUR'  // Finland
+      if (url.includes('/se-')) return 'SEK'  // Sweden
+      if (url.includes('/no-')) return 'NOK'  // Norway
+      if (url.includes('/dk-')) return 'DKK'  // Denmark
+      if (url.includes('/uk-') || url.includes('/gb-')) return 'GBP'
+      return 'EUR'  // Most of Europe uses EUR on Etsy
     }
   } catch { /* ignore */ }
   return 'USD'
@@ -96,10 +87,12 @@ async function extractFromHtml(
   url: string,
 ): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
 
-
-  // ── 0. Etsy: price range in JSON-LD (variants show lowPrice) ────
+  // ── 0. Etsy: comprehensive extraction ────────────────────────
   const etsyHostCheck = (() => { try { return new URL(url).hostname.includes('etsy.com') } catch { return false } })()
   if (etsyHostCheck) {
+    console.log('[scraper] Etsy detected, trying multiple extraction methods')
+    
+    // Method 1: JSON-LD structured data (most reliable)
     const jsonLdReEtsy = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
     let m: RegExpExecArray | null
     while ((m = jsonLdReEtsy.exec(html)) !== null) {
@@ -107,36 +100,118 @@ async function extractFromHtml(
         const parsed = JSON.parse(m[1])
         const items = Array.isArray(parsed) ? parsed : [parsed]
         for (const item of items) {
-          // Product with offers
-          const offers = item?.offers
-          if (offers) {
-            // AggregateOffer has lowPrice
-            const low = offers.lowPrice ?? offers.price
-            if (low != null) {
-              const amount = parseFloat(String(low))
-              if (!isNaN(amount) && amount > 0) {
-                return { price: amount, scrapedCurrency: offers.priceCurrency ?? offers.lowPriceCurrency ?? detectCurrency('', url) }
+          if (item?.['@type'] === 'Product' || item?.offers) {
+            const offers = item.offers
+            if (offers) {
+              // Handle AggregateOffer (product with variants)
+              if (offers['@type'] === 'AggregateOffer') {
+                const low = offers.lowPrice ?? offers.price
+                const currency = offers.priceCurrency ?? offers.lowPriceCurrency ?? 'EUR'
+                if (low != null) {
+                  const amount = parseFloat(String(low))
+                  if (!isNaN(amount) && amount > 0) {
+                    console.log(`[scraper] Etsy JSON-LD AggregateOffer found: ${amount} ${currency}`)
+                    return { price: amount, scrapedCurrency: currency }
+                  }
+                }
               }
-            }
-            // Array of offers — pick min
-            if (Array.isArray(offers)) {
-              const prices = offers.map((o: any) => parseFloat(String(o.price))).filter(n => !isNaN(n) && n > 0)
-              if (prices.length) {
-                return { price: Math.min(...prices), scrapedCurrency: offers[0]?.priceCurrency ?? detectCurrency('', url) }
+              // Handle single Offer
+              if (offers.price != null) {
+                const amount = parseFloat(String(offers.price))
+                const currency = offers.priceCurrency ?? 'EUR'
+                if (!isNaN(amount) && amount > 0) {
+                  console.log(`[scraper] Etsy JSON-LD Offer found: ${amount} ${currency}`)
+                  return { price: amount, scrapedCurrency: currency }
+                }
+              }
+              // Handle array of offers
+              if (Array.isArray(offers)) {
+                const prices = offers.map((o: any) => ({
+                  price: parseFloat(String(o.price)),
+                  currency: o.priceCurrency ?? 'EUR'
+                })).filter(p => !isNaN(p.price) && p.price > 0)
+                if (prices.length) {
+                  const minPrice = prices.reduce((min, p) => p.price < min.price ? p : min)
+                  console.log(`[scraper] Etsy JSON-LD offer array found: ${minPrice.price} ${minPrice.currency}`)
+                  return { price: minPrice.price, scrapedCurrency: minPrice.currency }
+                }
               }
             }
           }
         }
-      } catch { /* malformed */ }
-    }
-    // Etsy also embeds price in a data tag
-    const etsyPriceMatch = html.match(/"price":\s*"?([\d.]+)"?/)
-    if (etsyPriceMatch) {
-      const amount = parseFloat(etsyPriceMatch[1])
-      if (!isNaN(amount) && amount > 0) {
-        return { price: amount, scrapedCurrency: detectCurrency('', url) }
+      } catch (e) { 
+        console.warn('[scraper] Etsy JSON-LD parse error:', e)
       }
     }
+    
+    // Method 2: Meta tags (og:price:amount)
+    const metaPriceMatch = html.match(/<meta[^>]+property="(?:product:)?price:amount"[^>]+content="([^"]+)"/i)
+    const metaCurrMatch = html.match(/<meta[^>]+property="(?:product:)?price:currency"[^>]+content="([^"]+)"/i)
+    if (metaPriceMatch) {
+      const amount = parseFloat(metaPriceMatch[1].replace(/[^\d.]/g, ''))
+      const currency = metaCurrMatch?.[1] ?? detectCurrency('', url)
+      if (!isNaN(amount) && amount > 0) {
+        console.log(`[scraper] Etsy meta tag found: ${amount} ${currency}`)
+        return { price: amount, scrapedCurrency: currency }
+      }
+    }
+    
+    // Method 3: Embedded JSON in scripts (window.__INITIAL_STATE__ pattern)
+    // Etsy uses: "price":{"amount":11300,"divisor":100,"currency_code":"EUR"}
+    const priceInScript = html.match(/"price":\s*{\s*"amount":\s*(\d+),\s*"divisor":\s*(\d+)[^}]*"currency_code":\s*"([^"]+)"/i)
+    if (priceInScript) {
+      const amount = parseInt(priceInScript[1]) / parseInt(priceInScript[2])
+      const currency = priceInScript[3]
+      if (!isNaN(amount) && amount > 0) {
+        console.log(`[scraper] Etsy script JSON found: ${amount} ${currency}`)
+        return { price: amount, scrapedCurrency: currency }
+      }
+    }
+    
+    // Method 4: Simple price field in any JSON
+    const simplePriceMatch = html.match(/"(?:price|listing_price|currentPrice)":\s*"?([\d.]+)"?[^}]*"(?:currency[_-]?code|priceCurrency)"?:\s*"([A-Z]{3})"/i)
+    if (simplePriceMatch) {
+      const amount = parseFloat(simplePriceMatch[1])
+      const currency = simplePriceMatch[2]
+      if (!isNaN(amount) && amount > 0) {
+        console.log(`[scraper] Etsy simple JSON found: ${amount} ${currency}`)
+        return { price: amount, scrapedCurrency: currency }
+      }
+    }
+    
+    // Method 5: Reverse pattern (currency before price)
+    const reversePriceMatch = html.match(/"(?:currency[_-]?code|priceCurrency)":\s*"([A-Z]{3})"[^}]*"(?:price|listing_price)":\s*"?([\d.]+)"?/i)
+    if (reversePriceMatch) {
+      const currency = reversePriceMatch[1]
+      const amount = parseFloat(reversePriceMatch[2])
+      if (!isNaN(amount) && amount > 0) {
+        console.log(`[scraper] Etsy reverse JSON found: ${amount} ${currency}`)
+        return { price: amount, scrapedCurrency: currency }
+      }
+    }
+    
+    // Method 6: Data attributes (data-price, data-listing-price, etc.)
+    const dataPriceMatch = html.match(/data-(?:listing-)?price="([^"]+)"/i)
+    if (dataPriceMatch) {
+      const amount = parsePriceText(dataPriceMatch[1])
+      if (amount) {
+        console.log(`[scraper] Etsy data attribute found: ${amount}`)
+        return { price: amount, scrapedCurrency: detectCurrency(dataPriceMatch[1], url) }
+      }
+    }
+    
+    // Method 7: Look for price in visible text with currency symbol (last resort)
+    const visiblePriceMatch = html.match(/[€£$¥]\s*([\d\s,.]+)|(\d[\d\s,.]+)\s*[€£$¥kr]/i)
+    if (visiblePriceMatch) {
+      const priceText = visiblePriceMatch[1] || visiblePriceMatch[2]
+      const amount = parsePriceText(priceText)
+      if (amount && amount > 10) { // Avoid small numbers like ratings
+        console.log(`[scraper] Etsy visible text found: ${amount}`)
+        return { price: amount, scrapedCurrency: detectCurrency(visiblePriceMatch[0], url) }
+      }
+    }
+    
+    console.log('[scraper] Etsy: no price found in HTML with any method')
   }
 
   // ── 1. JSON-LD (best for compliant sites) ────────────────
