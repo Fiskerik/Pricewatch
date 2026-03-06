@@ -203,6 +203,53 @@ async function renderJs(url: string): Promise<string> {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
+// ─── URL normalisation ────────────────────────────────────────────────────────
+
+/**
+ * Clean tracking junk from URLs before storing/scraping.
+ * Etsy: keep only the listing path, drop all query params.
+ * Generic: strip common tracking params (utm_*, ref, fbclid …).
+ */
+export function cleanUrl(rawUrl: string): string {
+  let url: URL
+  try { url = new URL(rawUrl.trim()) } catch { return rawUrl.trim() }
+
+  const host = url.hostname.replace(/^www\./, '')
+
+  // Etsy — canonical form is /listing/<id>/<slug>, no query needed
+  if (host === 'etsy.com' || host.endsWith('.etsy.com')) {
+    const m = url.pathname.match(/\/listing\/\d+\/[^/]+/)
+    if (m) return `https://www.etsy.com${m[0]}`
+    return `https://www.etsy.com${url.pathname}`
+  }
+
+  const TRACKING_PARAMS = [
+    'utm_source','utm_medium','utm_campaign','utm_term','utm_content',
+    'ref','external','cns','sts','content_source','logging_key','ls',
+    'fbclid','gclid','msclkid','mc_cid','mc_eid','_ga','_gl',
+  ]
+  for (const p of TRACKING_PARAMS) url.searchParams.delete(p)
+  url.hash = ''
+  return url.toString()
+}
+
+// ─── Domain helpers ───────────────────────────────────────────────────────────
+
+export function getDomain(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
+}
+
+/** Sites known to require JS rendering */
+export const JS_RENDERED_DOMAINS = new Set([
+  'power.se', 'power.no', 'power.dk', 'power.fi',
+  'elgiganten.se', 'elgiganten.dk',
+  'mediamarkt.se', 'mediamarkt.de', 'mediamarkt.nl',
+  'webhallen.com',
+  'inet.se',
+  'onoff.se',
+  'etsy.com',
+])
+
 export async function scrapePrice(url: string): Promise<any> {
   try {
     const html = await renderJs(url)
