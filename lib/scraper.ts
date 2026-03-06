@@ -93,6 +93,26 @@ async function extractFromHtml(
     return null
   }
 
+  const isProductNode = (node: any): boolean => {
+    if (!node || typeof node !== 'object') return false
+    const t = node['@type']
+    if (typeof t === 'string') return t.toLowerCase() === 'product'
+    if (Array.isArray(t)) return t.some((v: unknown) => typeof v === 'string' && v.toLowerCase() === 'product')
+    return false
+  }
+
+  const isLikelyCurrentProduct = (node: any): boolean => {
+    if (!node || typeof node !== 'object') return false
+    try {
+      const current = new URL(url)
+      const nodeUrl = typeof node.url === 'string' ? new URL(node.url, current.origin) : null
+      if (!nodeUrl) return true
+      return nodeUrl.pathname === current.pathname
+    } catch {
+      return true
+    }
+  }
+
   const extractOfferFromNode = (node: any): { price: number; currency: CurrencyCode } | null => {
     if (!node || typeof node !== 'object') return null
 
@@ -124,7 +144,10 @@ async function extractFromHtml(
     try {
       const parsed = JSON.parse(m[1].trim())
       const items = Array.isArray(parsed) ? parsed : [parsed]
-      for (const item of items) {
+      const productItems = items.filter((item: any) => isProductNode(item) && isLikelyCurrentProduct(item))
+      const candidates = productItems.length > 0 ? productItems : items
+
+      for (const item of candidates) {
         const found = extractOfferFromNode(item)
         if (found) {
           console.log(`[scraper] price found via JSON-LD for ${url}: ${found.price} ${found.currency}`)
@@ -283,8 +306,55 @@ export interface ScrapeResult {
   error?: string
 }
 
+function buildShopifyProductJsonUrl(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl)
+    const productMatch = parsed.pathname.match(/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?products\/[^\/]+/i)
+    if (!productMatch) return null
+    return `${parsed.origin}${productMatch[0]}.js`
+  } catch {
+    return null
+  }
+}
+
+async function scrapeShopifyProductJson(url: string): Promise<{ price: number | null; scrapedCurrency: CurrencyCode | null }> {
+  const productJsonUrl = buildShopifyProductJsonUrl(url)
+  if (!productJsonUrl) return { price: null, scrapedCurrency: null }
+
+  try {
+    const res = await fetch(productJsonUrl, {
+      signal: AbortSignal.timeout(20_000),
+      headers: {
+        'Accept': 'application/json,text/plain;q=0.9,*/*;q=0.8',
+        'User-Agent': 'PricewatchBot/1.0 (+https://pricewatch.app)'
+      }
+    })
+    if (!res.ok) return { price: null, scrapedCurrency: null }
+
+    const data = await res.json() as any
+    const variants = Array.isArray(data?.variants) ? data.variants : []
+    const selected = variants.find((v: any) => v?.available) || variants[0]
+    const cents = selected?.price
+    if (typeof cents !== 'number' || cents <= 0) return { price: null, scrapedCurrency: null }
+
+    const currency = typeof data?.currency === 'string' ? data.currency : detectCurrency('', url)
+    const amount = Number.isInteger(cents) ? cents / 100 : cents
+
+    console.log(`[scraper] price found via Shopify .js endpoint for ${url}: ${amount} ${currency}`)
+    return { price: amount, scrapedCurrency: currency }
+  } catch {
+    return { price: null, scrapedCurrency: null }
+  }
+}
+
 export async function scrapePrice(url: string, _targetCurrency?: string): Promise<ScrapeResult> {
-  const domain = getDomain(url)
+  // Shopify product JSON endpoint is often the most accurate source for product pages.
+  if (url.includes('/products/')) {
+    const shopifyJsonResult = await scrapeShopifyProductJson(url)
+    if (shopifyJsonResult.price !== null) {
+      return { ...shopifyJsonResult, method: 'direct' }
+    }
+  }
   
   // Vi använder rendering som standard för att undvika Cloudflare-blockeringar på små butiker
   try {
