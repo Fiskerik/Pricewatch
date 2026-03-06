@@ -13,11 +13,13 @@ import { applyVat } from '@/lib/vat'
 
 interface ScrapedCandidate { metric: string; source: string; price: number; currency: string }
 interface PendingPrice {
+  rawPrice: number
   price: number
   currency: string
   includesVat: boolean
   candidates: ScrapedCandidate[]
   selectedMetric: string | null
+  decimalShift: number
 }
 type ViewMode = 'products' | 'competitors'
 type ProductLayout = 'list' | 'grid'
@@ -54,6 +56,13 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
   const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
+  const [decimalShifts, setDecimalShifts] = useState<Record<string, number>>({})
+
+  const applyDecimalShift = (value: number, shift: number) => {
+    if (!Number.isFinite(value) || !Number.isFinite(shift) || shift === 0) return value
+    const next = value / Math.pow(10, shift)
+    return Math.round(next * 1000000) / 1000000
+  }
 
   useEffect(() => {
     const storedCountry = window.localStorage.getItem('pricewatch:vatCountry')
@@ -97,6 +106,16 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         console.log('[dashboard] failed to parse preferred metrics map')
       }
     }
+
+    const storedDecimalShiftsRaw = window.localStorage.getItem('pricewatch:decimalShifts')
+    if (storedDecimalShiftsRaw) {
+      try {
+        const parsed = JSON.parse(storedDecimalShiftsRaw) as Record<string, number>
+        setDecimalShifts(parsed)
+      } catch {
+        console.log('[dashboard] failed to parse decimal shifts map')
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -106,6 +125,10 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   useEffect(() => {
     window.localStorage.setItem('pricewatch:preferredMetrics', JSON.stringify(preferredMetrics))
   }, [preferredMetrics])
+
+  useEffect(() => {
+    window.localStorage.setItem('pricewatch:decimalShifts', JSON.stringify(decimalShifts))
+  }, [decimalShifts])
 
   const handleVatCountryChange = (code: string, rate: number) => {
     setVatCountryCode(code)
@@ -162,6 +185,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         const data = await res.json()
         const comp = data.competitor
         if (comp?.last_price != null) {
+          const savedDecimalShift = decimalShifts[competitorId] ?? 0
+          const shiftedPrice = applyDecimalShift(comp.last_price, savedDecimalShift)
+          console.log('[fetch] pending price prepared', { competitorId, rawPrice: comp.last_price, savedDecimalShift, shiftedPrice })
           const candidates = Array.isArray(data?.candidates) ? data.candidates as ScrapedCandidate[] : []
           const selectedMetric =
             (typeof data?.metricUsed === 'string' && data.metricUsed)
@@ -173,11 +199,13 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           setPendingPrices(prev => ({
             ...prev,
             [competitorId]: {
-              price: comp.last_price,
+              rawPrice: comp.last_price,
+              price: shiftedPrice,
               currency: comp.last_price_currency ?? 'USD',
               includesVat: true,
               candidates,
               selectedMetric,
+              decimalShift: savedDecimalShift,
             },
           }))
           setProducts(prev => prev.map(p => ({
@@ -188,6 +216,33 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       })
       .catch(() => {})
       .finally(() => { setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n }) })
+  }
+
+  const handlePendingDecimalShift = (competitorId: string, decimalShift: number) => {
+    const safeShift = Number.isFinite(decimalShift) ? Math.max(-6, Math.min(6, Math.trunc(decimalShift))) : 0
+    console.log('[decimal] updated decimal shift', { competitorId, safeShift })
+    setPendingPrices(prev => {
+      const current = prev[competitorId]
+      if (!current) return prev
+      return {
+        ...prev,
+        [competitorId]: {
+          ...current,
+          decimalShift: safeShift,
+          price: applyDecimalShift(current.rawPrice, safeShift),
+        },
+      }
+    })
+
+    setDecimalShifts(prev => {
+      const next = { ...prev }
+      if (safeShift === 0) {
+        delete next[competitorId]
+      } else {
+        next[competitorId] = safeShift
+      }
+      return next
+    })
   }
 
   const handleConfirmPrice = async (id: string, includesVat: boolean) => {
@@ -283,11 +338,24 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
+    const previous = products
+      .find(p => p.id === productId)
+      ?.competitor_urls
+      ?.find(c => c.id === competitor.id)
+
     setProducts(prev => prev.map(p =>
       p.id !== productId ? p : {
         ...p, competitor_urls: (p.competitor_urls ?? []).map(c => c.id === competitor.id ? competitor : c),
       }
     ))
+
+    if (previous && previous.url !== competitor.url) {
+      setDecimalShifts(prev => {
+        const next = { ...prev }
+        delete next[competitor.id]
+        return next
+      })
+    }
   }
 
   const handleCompetitorDeleted = (productId: string, competitorId: string) => {
@@ -297,6 +365,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setEditingCompetitor(null)
     setPendingPrices(prev => { const n = { ...prev }; delete n[competitorId]; return n })
     setFetchingIds(prev => { const n = { ...prev }; delete n[competitorId]; return n })
+    setDecimalShifts(prev => { const n = { ...prev }; delete n[competitorId]; return n })
   }
 
   const handleProductCurrencyUpdated = (productId: string, currencyCode: string, converted?: {
@@ -509,6 +578,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                           return { ...prev, [competitorId]: { ...current, selectedMetric: metric } }
                         })
                       }}
+                      onPendingDecimalShift={handlePendingDecimalShift}
                       onConfirmPrice={handleConfirmPrice}
                       onRejectPrice={handleRejectPrice}
                     />
