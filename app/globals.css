@@ -9,13 +9,61 @@
     padding: 0;
   }
 
+  html {
+    /* Prevent horizontal scroll on mobile */
+    overflow-x: hidden;
+    /* Smooth scrolling */
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply text-gray-900 bg-white;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
+    /* Prevent iOS text size adjustment */
+    -webkit-text-size-adjust: 100%;
   }
 
-  input, button {
+  input, button, select, textarea {
     font-family: inherit;
+    /* Better tap highlight on mobile */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Better button touch targets on mobile */
+  button {
+    touch-action: manipulation;
+  }
+
+  /* Prevent zoom on input focus on iOS */
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="url"],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  @media (min-width: 640px) {
+    input[type="text"],
+    input[type="email"],
+    input[type="number"],
+    input[type="url"],
+    select,
+    textarea {
+      font-size: 14px;
+    }
+  }
+}
+
+@layer utilities {
+  /* Safe area insets for notched phones */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }

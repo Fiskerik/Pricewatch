@@ -226,15 +226,15 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div className="flex flex-col lg:flex-row min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
-      <main className="flex-1 px-4 py-5 sm:p-8 overflow-y-auto max-h-screen">
+      <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 min-w-0 overflow-x-hidden">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-5 sm:mb-7">
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
+            <h1 className="text-lg sm:text-xl font-extrabold tracking-tight">Dashboard</h1>
             <p className="text-sm text-gray-400 mt-0.5">
               Checks run {limits.checkFrequency} · {products.length} products · {totalCompetitors} URLs tracked
             </p>
@@ -261,17 +261,17 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-5 sm:mb-7">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5 lg:mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
             { label: 'Changes Today', value: changedToday, sub: 'price changes', icon: '📊', highlight: changedToday > 0 },
-            { label: 'Alerts Sent', value: alerts.length, sub: 'recent alerts', icon: '🔔' },
+            { label: 'Alerts Sent', value: alerts.length, sub: 'recent alerts', icon: '🔔', wide: true },
           ].map(stat => (
-            <div key={stat.label} className="bg-white rounded-2xl border border-gray-200 p-5">
+            <div key={stat.label} className={`bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 ${"wide" in stat && stat.wide ? "col-span-2 lg:col-span-1" : ""}`}>
               <div className="flex justify-between items-start">
                 <div>
                   <div className="text-xs text-gray-400 font-medium mb-1.5">{stat.label}</div>
-                  <div className={`text-3xl font-extrabold ${'highlight' in stat && stat.highlight ? 'text-red-500' : 'text-gray-900'}`}>{stat.value}</div>
+                  <div className={`text-2xl sm:text-3xl font-extrabold ${'highlight' in stat && stat.highlight ? 'text-red-500' : 'text-gray-900'}`}>{stat.value}</div>
                   <div className="text-xs text-gray-400 mt-1">{stat.sub}</div>
                 </div>
                 <span className="text-2xl">{stat.icon}</span>
@@ -292,16 +292,16 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
         {/* View toggle + search */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-4">
-          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5">
+          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5 w-full sm:w-auto">
             <button
               onClick={() => setViewMode('products')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'products' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'products' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
             >
               Products
             </button>
             <button
               onClick={() => setViewMode('competitors')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'competitors' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'competitors' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
             >
               By Competitor
             </button>
@@ -390,7 +390,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                     <div key={group.domain} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                       <button
                         onClick={() => setExpandedDomain(isOpen ? null : group.domain)}
-                        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors"
                       >
                         <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                           <img
