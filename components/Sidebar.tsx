@@ -34,8 +34,8 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
 
   const usagePct = planLimit === Infinity ? 0 : (productCount / planLimit) * 100
 
-  const SidebarContent = (
-    <>
+  const SidebarInner = (
+    <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="px-5 pb-5 border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2" onClick={() => setMobileOpen(false)}>
@@ -45,18 +45,18 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
       </div>
 
       {/* Store badge */}
-      {store?.shop_domain ? (
-        <div className="px-5 py-3 border-b border-gray-100">
-          <div className="text-xs text-gray-400 font-medium mb-0.5">Connected store</div>
-          <div className="text-xs font-semibold text-gray-700 truncate">{store.shop_domain}</div>
-        </div>
-      ) : (
-        <div className="px-5 py-3 border-b border-gray-100">
+      <div className="px-5 py-3 border-b border-gray-100">
+        {store?.shop_domain ? (
+          <>
+            <div className="text-xs text-gray-400 font-medium mb-0.5">Connected store</div>
+            <div className="text-xs font-semibold text-gray-700 truncate">{store.shop_domain}</div>
+          </>
+        ) : (
           <Link href="/dashboard/connect-shopify" className="text-xs font-semibold text-purple-600 hover:underline" onClick={() => setMobileOpen(false)}>
             + Connect Shopify store
           </Link>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
@@ -106,15 +106,16 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
             {user.email?.[0]?.toUpperCase()}
           </div>
           <span className="text-xs text-gray-600 truncate flex-1">{user.email}</span>
-          <button onClick={handleSignOut} className="text-xs text-gray-400 hover:text-gray-600">↪</button>
+          <button onClick={handleSignOut} className="text-xs text-gray-400 hover:text-gray-600" title="Sign out">↪</button>
         </div>
       </div>
-    </>
+    </div>
   )
 
   return (
     <>
-      <div className="lg:hidden sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+      {/* ── Mobile top bar ───────────────────────────────────── */}
+      <div className="lg:hidden w-full bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
         <Link href="/" className="flex items-center gap-2">
           <Image src="/logo.png" alt="PriceWatch logo" width={24} height={24} className="rounded-md" />
           <span className="font-bold text-sm">PriceWatch</span>
@@ -122,20 +123,35 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         <button
           type="button"
           onClick={() => setMobileOpen(prev => !prev)}
-          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700"
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
         >
-          {mobileOpen ? 'Close' : 'Menu'}
+          {mobileOpen ? '✕ Close' : '☰ Menu'}
         </button>
       </div>
 
-      {mobileOpen && <button type="button" className="lg:hidden fixed inset-0 bg-black/35 z-40" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
+      {/* ── Mobile drawer backdrop ───────────────────────────── */}
+      {mobileOpen && (
+        <button
+          type="button"
+          className="lg:hidden fixed inset-0 bg-black/40 z-40"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Close menu"
+        />
+      )}
 
-      <aside className={`lg:hidden fixed top-0 left-0 z-50 h-full w-72 max-w-[85vw] bg-white border-r border-gray-100 flex flex-col py-5 shrink-0 transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-[105%]'}`}>
-        {SidebarContent}
+      {/* ── Mobile drawer ────────────────────────────────────── */}
+      <aside className={`
+        lg:hidden fixed top-0 left-0 z-50 h-full w-72 max-w-[85vw]
+        bg-white border-r border-gray-100 py-5 shadow-2xl
+        transition-transform duration-200
+        ${mobileOpen ? 'translate-x-0' : '-translate-x-[105%]'}
+      `}>
+        {SidebarInner}
       </aside>
 
-      <aside className="hidden lg:flex lg:sticky lg:top-0 lg:h-screen lg:w-56 bg-white border-r border-gray-100 flex-col py-5 shrink-0">
-        {SidebarContent}
+      {/* ── Desktop sidebar ──────────────────────────────────── */}
+      <aside className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 bg-white border-r border-gray-100 py-5 sticky top-0 h-screen">
+        {SidebarInner}
       </aside>
     </>
   )

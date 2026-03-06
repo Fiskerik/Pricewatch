@@ -117,16 +117,16 @@ export default function ProductCard({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 sm:px-5 py-3 sm:py-4 text-left hover:bg-gray-50 transition-colors">
-        <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg bg-gray-100 overflow-hidden shrink-0">
+      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors">
+        <div className="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden shrink-0">
           {product.image_url
             ? <img src={product.image_url} alt={product.title} className="w-full h-full object-cover" />
             : <div className="w-full h-full flex items-center justify-center text-gray-300 text-lg">📦</div>
           }
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm truncate">{product.title}</div>
-          <div className="text-sm text-gray-500 mt-0.5 leading-tight">
+          <div className="font-semibold text-sm leading-tight truncate">{product.title}</div>
+          <div className="text-xs text-gray-500 mt-0.5 leading-tight">
             {ourPrice ? `Your price: ${formatMoney(ourPrice, normalizeCurrencyCode(productCurrency))} · ` : ''}
             {competitors.length} competitor{competitors.length !== 1 ? 's' : ''} tracked
           </div>
@@ -151,7 +151,7 @@ export default function ProductCard({
       </button>
 
       {isExpanded && (
-        <div className="border-t border-gray-100 px-3 sm:px-5 pb-3 sm:pb-4 pt-3 space-y-2">
+        <div className="border-t border-gray-100 px-3 pb-3 pt-3 space-y-2">
           {/* Currency selector */}
           <div className="pb-1">
             <label className="text-xs text-gray-500 mr-2">Product currency:</label>
@@ -191,9 +191,9 @@ export default function ProductCard({
                   : changed ? 'bg-red-50 border-red-100'
                   : 'bg-gray-50 border-gray-100'
                 }`}>
-                  <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3">
+                  <div className="flex items-center gap-2 px-3 py-3">
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">{comp.label || hostname}</div>
+                      <div className="text-sm font-semibold leading-tight truncate max-w-[140px] sm:max-w-none">{comp.label || hostname}</div>
                       <div className="text-xs text-gray-400 mt-0.5">
                         {isFetching ? 'Fetching price…'
                           : comp.last_checked_at
@@ -235,7 +235,7 @@ export default function ProductCard({
                     {/* Price display */}
                     {!isFetching && priceWithVat !== null ? (
                       <div className="text-right shrink-0">
-                        <div className={`text-base sm:text-lg font-extrabold ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
+                        <div className={`text-base font-extrabold tabular-nums ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
                           {formatMoney(priceWithVat, compCurrency)}
                         </div>
                         <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
@@ -270,7 +270,7 @@ export default function ProductCard({
                             </span>
                           )}
                         </div>
-                        <div className="text-base sm:text-lg font-extrabold text-gray-900">
+                        <div className="text-lg font-extrabold text-gray-900">
                           {formatMoney(
                             showVat
                               ? (pending.includesVat ? pending.price : applyVat(pending.price, vatRate))
@@ -313,7 +313,7 @@ export default function ProductCard({
           <button
             onClick={onAddCompetitor}
             disabled={atLimit}
-            className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2.5 text-sm text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-400 hover:border-gray-400 hover:text-gray-600 active:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {atLimit ? `Competitor limit reached (${competitorLimit})` : '+ Add competitor URL'}
           </button>
