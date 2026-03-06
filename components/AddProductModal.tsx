@@ -19,6 +19,7 @@ interface ShopifyProduct {
 }
 
 interface Props {
+  storeId?: string
   onClose: () => void
   onAdded: (product: Product) => void
   onUpdated?: (product: Product) => void
@@ -26,12 +27,12 @@ interface Props {
   product?: Product | null
 }
 
-export default function AddProductModal({ onClose, onAdded, onUpdated, mode = 'add', product }: Props) {
+export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, mode = 'add', product }: Props) {
   const supabase = createClientComponentClient()
   const isEditMode = mode === 'edit' && !!product
 
   // Form state
-  const [selectedStoreId, setSelectedStoreId] = useState(product?.store_id ?? '')
+  const [selectedStoreId, setSelectedStoreId] = useState(product?.store_id ?? storeId ?? '')
   const [inputMethod, setInputMethod] = useState<'manual' | 'shopify'>('manual')
   const [title, setTitle] = useState(product?.title ?? '')
   const [ourPrice, setOurPrice] = useState(product?.our_price !== null && product?.our_price !== undefined ? String(product.our_price) : '')
@@ -65,7 +66,7 @@ export default function AddProductModal({ onClose, onAdded, onUpdated, mode = 'a
         setStores(allStores || [])
         
         // Auto-select first store if available and not in edit mode
-        if (!isEditMode && allStores && allStores.length > 0) {
+        if (!isEditMode && allStores && allStores.length > 0 && !storeId) {
           setSelectedStoreId(allStores[0].id)
         }
       } catch (err) {
