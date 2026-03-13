@@ -24,6 +24,13 @@ interface PreflightResult {
   } | null
 }
 
+interface DebugCandidate {
+  metric: string
+  source: string
+  currency: string
+  price: number
+}
+
 export default function AddCompetitorModal({
   productId,
   productCurrency,
@@ -41,6 +48,15 @@ export default function AddCompetitorModal({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [preflightWarning, setPreflightWarning] = useState<PreflightResult | null>(null)
   const [overrideLowConfidence, setOverrideLowConfidence] = useState(false)
+  const [trackingMetric, setTrackingMetric] = useState<string | null>(null)
+  const [lockTrackingMetric, setLockTrackingMetric] = useState(true)
+  const [testingScrape, setTestingScrape] = useState(false)
+  const [debugOpen, setDebugOpen] = useState(false)
+  const [debugData, setDebugData] = useState<{
+    metricUsed: string | null
+    matchedPreferredMetric: boolean
+    candidates: DebugCandidate[]
+  } | null>(null)
 
   useEffect(() => {
     if (mode === 'edit' && competitor) {
@@ -53,7 +69,48 @@ export default function AddCompetitorModal({
     setSaveError(null)
     setPreflightWarning(null)
     setOverrideLowConfidence(false)
+    setTrackingMetric(competitor?.selected_price_metric ?? null)
+    setLockTrackingMetric(true)
+    setDebugOpen(false)
+    setDebugData(null)
   }, [mode, competitor])
+
+  const handleTestScrapeNow = async () => {
+    if (!competitor?.id) return
+    setTestingScrape(true)
+    setDebugOpen(true)
+    setSaveError(null)
+
+    try {
+      const res = await fetch('/api/competitors/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competitorId: competitor.id, preferredMetric: trackingMetric }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSaveError(data?.error || 'Failed to test scrape.')
+        return
+      }
+
+      const candidates = Array.isArray(data?.candidates) ? data.candidates as DebugCandidate[] : []
+      console.log('[competitor/edit] test scrape result', {
+        competitorId: competitor.id,
+        metricUsed: data?.metricUsed ?? null,
+        matchedPreferredMetric: Boolean(data?.matchedPreferredMetric),
+        candidateCount: candidates.length,
+      })
+      setDebugData({
+        metricUsed: typeof data?.metricUsed === 'string' ? data.metricUsed : null,
+        matchedPreferredMetric: Boolean(data?.matchedPreferredMetric),
+        candidates,
+      })
+    } catch {
+      setSaveError('Failed to test scrape.')
+    } finally {
+      setTestingScrape(false)
+    }
+  }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,6 +127,7 @@ export default function AddCompetitorModal({
             competitorId: competitor.id,
             url: url.trim(),
             label: label.trim() || null,
+            selectedMetric: lockTrackingMetric ? trackingMetric : null,
           }),
         })
         const data = await res.json()
@@ -165,6 +223,69 @@ export default function AddCompetitorModal({
               className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
             />
           </div>
+
+          {mode === 'edit' && competitor && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Tracking metric</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">Select once and lock for future checks.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleTestScrapeNow}
+                  disabled={testingScrape}
+                  className="text-xs font-semibold border border-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-white transition-colors disabled:opacity-40"
+                >
+                  {testingScrape ? 'Testing…' : 'Test scrape now'}
+                </button>
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lockTrackingMetric}
+                  onChange={(e) => setLockTrackingMetric(e.target.checked)}
+                />
+                Lock selected metric for future checks
+              </label>
+
+              <input
+                value={trackingMetric ?? ''}
+                onChange={(e) => setTrackingMetric(e.target.value || null)}
+                placeholder="e.g. product.variants[0].price"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-black transition-colors"
+              />
+
+              {debugOpen && (
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs space-y-2">
+                  <div className="font-semibold text-gray-700">Debug panel</div>
+                  {!debugData && <div className="text-gray-500">Run test scrape to inspect extraction candidates.</div>}
+                  {debugData && (
+                    <>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 border font-semibold ${debugData.matchedPreferredMetric ? 'bg-green-100 text-green-700 border-green-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                          {debugData.matchedPreferredMetric ? 'matched' : 'fallback'}
+                        </span>
+                        {!debugData.matchedPreferredMetric && (
+                          <span className="text-[11px] text-amber-700">Preferred metric missed, scraper used fallback.</span>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {debugData.candidates.slice(0, 3).map((candidate, idx) => (
+                          <div key={`${candidate.metric}-${idx}`} className="rounded-md border border-gray-200 px-2 py-1.5">
+                            <div className="font-medium text-gray-800">#{idx + 1} {candidate.metric}</div>
+                            <div className="text-gray-600">source: {candidate.source}</div>
+                            <div className="text-gray-600">detected currency: {candidate.currency}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {mode === 'add' && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-2.5">

@@ -11,7 +11,13 @@ import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/componen
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
 import { applyVat } from '@/lib/vat'
 
-interface ScrapedCandidate { metric: string; source: string; price: number; currency: string }
+interface ScrapedCandidate {
+  metric: string
+  source: string
+  price: number
+  currency: string
+  confidence?: number
+}
 interface PendingPrice {
   rawPrice: number
   price: number
@@ -20,6 +26,9 @@ interface PendingPrice {
   candidates: ScrapedCandidate[]
   selectedMetric: string | null
   decimalShift: number
+  metricUsed: string | null
+  matchedPreferredMetric: boolean
+  scrapeStatus: 'matched' | 'fallback' | 'needs_review'
 }
 type ViewMode = 'products' | 'competitors'
 type ProductLayout = 'list' | 'grid'
@@ -196,6 +205,13 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             || candidates[0]?.metric
             || null
 
+          const hasSavedMetric = Boolean(comp?.selected_price_metric || preferredMetrics[competitorId])
+          const matchedPreferredMetric = Boolean(data?.matchedPreferredMetric)
+          const scrapeStatus: PendingPrice['scrapeStatus'] =
+            !selectedMetric ? 'needs_review' : hasSavedMetric
+              ? (matchedPreferredMetric ? 'matched' : 'fallback')
+              : 'needs_review'
+
           setPendingPrices(prev => ({
             ...prev,
             [competitorId]: {
@@ -206,6 +222,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               candidates,
               selectedMetric,
               decimalShift: savedDecimalShift,
+              metricUsed: typeof data?.metricUsed === 'string' ? data.metricUsed : null,
+              matchedPreferredMetric,
+              scrapeStatus,
             },
           }))
           setProducts(prev => prev.map(p => ({
