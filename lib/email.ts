@@ -9,6 +9,16 @@ export interface PriceAlertParams {
   currency?: string
 }
 
+export interface EmailSendDebug {
+  skipped: boolean
+  reason?: 'missing_resend_api_key'
+  provider: 'resend'
+  messageId?: string | null
+  to: string
+  from: string
+  subject: string
+}
+
 function fmtPrice(amount: number, currency = 'USD') {
   try {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount)
@@ -17,7 +27,7 @@ function fmtPrice(amount: number, currency = 'USD') {
   }
 }
 
-export async function sendPriceAlert(params: PriceAlertParams): Promise<void> {
+export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSendDebug> {
   const { to, productTitle, competitorLabel, competitorUrl, oldPrice, newPrice, ourPrice, currency = 'USD' } = params
 
   const dropped = newPrice < oldPrice
@@ -73,13 +83,57 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<void> {
 </body></html>`
 
   const apiKey = process.env.RESEND_API_KEY
+  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+
+  console.log('[email] preparing send', {
+    provider: 'resend',
+    hasApiKey: Boolean(apiKey),
+    to,
+    from,
+    subject,
+  })
+
   if (!apiKey) {
-    console.warn('[email] RESEND_API_KEY not set — skipping alert')
-    return
+    console.warn('[email] RESEND_API_KEY not set — skipping alert', {
+      provider: 'resend',
+      to,
+      from,
+      subject,
+    })
+    return {
+      skipped: true,
+      reason: 'missing_resend_api_key',
+      provider: 'resend',
+      messageId: null,
+      to,
+      from,
+      subject,
+    }
   }
 
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
   const { Resend } = await import('resend')
   const resend = new Resend(apiKey)
-  await resend.emails.send({ from, to, subject, html })
+  const result = await resend.emails.send({ from, to, subject, html })
+
+  console.log('[email] provider response', {
+    provider: 'resend',
+    to,
+    from,
+    messageId: result?.data?.id ?? null,
+    hasError: Boolean(result?.error),
+    error: result?.error?.message ?? null,
+  })
+
+  if (result?.error) {
+    throw new Error(`Resend send failed: ${result.error.message}`)
+  }
+
+  return {
+    skipped: false,
+    provider: 'resend',
+    messageId: result?.data?.id ?? null,
+    to,
+    from,
+    subject,
+  }
 }
