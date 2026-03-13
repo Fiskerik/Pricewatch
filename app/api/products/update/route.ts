@@ -36,18 +36,33 @@ export async function PATCH(req: NextRequest) {
 
   if (!store) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
 
-  const { data, error } = await supabase
+  const updatePayload = {
+    title: String(title).trim(),
+    our_price: typeof ourPrice === 'number' && Number.isFinite(ourPrice) ? ourPrice : null,
+    currency_code: normalizeCurrencyCode(currencyCode),
+    vat_included: typeof vatIncluded === 'boolean' ? vatIncluded : false,
+    image_url: typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null,
+  }
+
+  let { data, error } = await supabase
     .from('products')
-    .update({
-      title: String(title).trim(),
-      our_price: typeof ourPrice === 'number' && Number.isFinite(ourPrice) ? ourPrice : null,
-      currency_code: normalizeCurrencyCode(currencyCode),
-      vat_included: typeof vatIncluded === 'boolean' ? vatIncluded : false,
-      image_url: typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null,
-    })
+    .update(updatePayload)
     .eq('id', productId)
     .select()
     .single()
+
+  if (error?.message?.includes("'vat_included'")) {
+    console.log('[products/update] vat_included column missing in products table, retrying without vat_included', { productId, userId: user.id })
+    const { vat_included: _ignoredVatIncluded, ...payloadWithoutVat } = updatePayload
+    const retry = await supabase
+      .from('products')
+      .update(payloadWithoutVat)
+      .eq('id', productId)
+      .select()
+      .single()
+    data = retry.data
+    error = retry.error
+  }
 
   if (error) {
     console.log('[products/update] update failed', { productId, userId: user.id, error: error.message })
