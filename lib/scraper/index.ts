@@ -17,7 +17,7 @@ async function renderWithScraperApi(url: string): Promise<string> {
   apiUrl.searchParams.set('render', 'true')
   apiUrl.searchParams.set('premium', 'true')
   if (url.includes('etsy.com')) apiUrl.searchParams.set('wait_for_selector', '.wt-text-title-03')
-  if (url.includes('hm.com')) apiUrl.searchParams.set('wait_for_selector', '[data-testid="price-value"],[class*="ProductPriceCurrent"],[class*="price-current"],[class*="PriceValue"],[class*="Price"]')
+  if (url.includes('hm.com')) apiUrl.searchParams.set('wait_for_selector', '[data-testid="white-price"],[data-testid="price-value"],[class*="ProductPriceCurrent"],[class*="price-current"],[class*="PriceValue"],[class*="Price"]')
 
   const res = await fetch(apiUrl.toString(), { signal: AbortSignal.timeout(60_000) })
   return res.text()

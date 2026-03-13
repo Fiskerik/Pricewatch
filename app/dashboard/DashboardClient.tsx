@@ -272,28 +272,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       return
     }
 
-    // Auto-convert to product currency if they differ (e.g. USD eBay price → SEK product)
-    const product = products.find(p => (p.competitor_urls ?? []).some(c => c.id === id))
-    const productCurrency = (product?.currency_code ?? 'USD').toUpperCase()
-    let finalPrice = pending.price
-    let finalCurrency = (pending.currency || 'USD').toUpperCase()
-
-    if (finalCurrency !== productCurrency) {
-      try {
-        const res = await fetch(`https://open.er-api.com/v6/latest/${finalCurrency}`)
-        if (res.ok) {
-          const fx = await res.json()
-          const rate = fx?.rates?.[productCurrency]
-          if (rate) {
-            finalPrice = Math.round(pending.price * rate * 100) / 100
-            finalCurrency = productCurrency
-            console.log(`[confirm] converted ${pending.price} ${pending.currency} → ${finalPrice} ${productCurrency}`)
-          }
-        }
-      } catch (err) {
-        console.warn('[confirm] FX conversion failed, keeping original', err)
-      }
-    }
+    const finalPrice = pending.price
+    const finalCurrency = (pending.currency || 'USD').toUpperCase()
+    console.log('[confirm] preserving scraped price/currency', { id, finalPrice, finalCurrency })
 
     setProducts(prev => prev.map(p => ({
       ...p,
