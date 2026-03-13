@@ -35,6 +35,8 @@ export interface CompetitorUrl {
   last_price_currency?: string | null
   last_checked_at: string | null
   last_changed_at: string | null
+  last_stock_status?: 'in_stock' | 'out_of_stock' | 'unknown' | null
+  last_stock_changed_at?: string | null
   match_confidence?: number | null
   mismatch_reasons?: string[] | null
   preflight_signals?: {

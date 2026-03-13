@@ -19,6 +19,15 @@ export interface EmailSendDebug {
   subject: string
 }
 
+export interface StockAlertParams {
+  to: string
+  productTitle: string
+  competitorLabel: string
+  competitorUrl: string
+  previousStatus: 'in_stock' | 'out_of_stock' | 'unknown'
+  newStatus: 'in_stock' | 'out_of_stock'
+}
+
 function fmtPrice(amount: number, currency = 'USD') {
   try {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount)
@@ -84,6 +93,70 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
     <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color:#a1a1aa;text-decoration:underline">Dashboard</a>
     &nbsp;&middot;&nbsp;
     <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/settings" style="color:#a1a1aa;text-decoration:underline">Manage alerts</a>
+  </div>
+</div>
+</body></html>`
+
+  const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
+  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+
+  if (!apiKey) {
+    return {
+      skipped: true,
+      reason: 'missing_resend_api_key',
+      provider: 'resend',
+      messageId: null,
+      to,
+      from,
+      subject,
+    }
+  }
+
+  const { Resend } = await import('resend')
+  const resend = new Resend(apiKey)
+  const result = await resend.emails.send({ from, to, subject, html })
+
+  if (result?.error) {
+    throw new Error(`Resend send failed: ${result.error.message}`)
+  }
+
+  return {
+    skipped: false,
+    provider: 'resend',
+    messageId: result?.data?.id ?? null,
+    to,
+    from,
+    subject,
+  }
+}
+
+export async function sendStockAlert(params: StockAlertParams): Promise<EmailSendDebug> {
+  const { to, productTitle, competitorLabel, competitorUrl, previousStatus, newStatus } = params
+  const isOos = newStatus === 'out_of_stock'
+  const accent = isOos ? '#7c3aed' : '#0f766e'
+  const bg = isOos ? '#f5f3ff' : '#ecfeff'
+
+  let hostname = competitorUrl
+  try { hostname = new URL(competitorUrl).hostname } catch { /* keep raw */ }
+  const name = competitorLabel || hostname
+  const subject = `${name} is now ${isOos ? 'out of stock' : 'back in stock'} for ${productTitle}`
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:32px 12px;background:#f4f4f5;font-family:Inter,system-ui,sans-serif;color:#18181b">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
+  <div style="background:${accent};padding:24px 28px">
+    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">PriceWatch Stock Alert</div>
+    <div style="font-size:24px;line-height:1.25;font-weight:800;color:#fff;margin:0">${isOos ? 'Competitor out of stock' : 'Competitor restocked'}</div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.86);margin-top:6px">${name} stock state changed for <strong>${productTitle}</strong>.</div>
+  </div>
+  <div style="padding:24px 28px">
+    <div style="background:${bg};border-radius:12px;padding:16px;font-size:14px;line-height:1.6;color:#27272a;margin-bottom:18px">
+      Previous status: <strong>${previousStatus.replace('_', ' ')}</strong><br/>
+      Current status: <strong>${newStatus.replace('_', ' ')}</strong>
+    </div>
+    <a href="${competitorUrl}" style="display:block;background:#111;color:#fff;text-align:center;padding:14px 20px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px">
+      Open competitor page &rarr;
+    </a>
   </div>
 </div>
 </body></html>`

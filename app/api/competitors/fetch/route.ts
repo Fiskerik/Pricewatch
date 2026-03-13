@@ -46,9 +46,19 @@ export async function POST(req: NextRequest) {
     preferredMetric: savedMetric,
     matchedPreferredMetric: result.matchedPreferredMetric,
     candidateCount: result.candidates.length,
+    stockStatus: result.stockStatus,
+    stockSource: result.stockSource,
   })
 
   const updatePayload: Record<string, unknown> = { last_checked_at: now }
+
+  if (result.stockStatus !== 'unknown') {
+    const previousStockStatus = (competitor as any).last_stock_status
+    updatePayload.last_stock_status = result.stockStatus
+    if (previousStockStatus && previousStockStatus !== result.stockStatus) {
+      updatePayload.last_stock_changed_at = now
+    }
+  }
 
   if (result.price !== null) {
     const previousPrice = competitor.last_price
@@ -80,5 +90,7 @@ export async function POST(req: NextRequest) {
     candidates: result.candidates,
     metricUsed: result.metricUsed,
     matchedPreferredMetric: result.matchedPreferredMetric,
+    stockStatus: result.stockStatus,
+    stockSource: result.stockSource,
   })
 }
