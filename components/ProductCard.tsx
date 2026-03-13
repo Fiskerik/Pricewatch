@@ -88,6 +88,7 @@ interface Props {
   pendingPrices: Record<string, PendingPrice>
   onPendingVatIncludedChange: (competitorId: string, includesVat: boolean) => void
   onPendingMetricChange: (competitorId: string, metric: string) => void
+  onPendingCurrencyChange: (competitorId: string, currency: string) => void
   onPendingDecimalShift: (competitorId: string, decimalShift: number) => void
   onConfirmPrice: (competitorId: string, includesVat: boolean) => void
   onRejectPrice: (competitorId: string) => void
@@ -153,7 +154,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 export default function ProductCard({
   product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
-  fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
+  fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
   const competitors = product.competitor_urls ?? []
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
@@ -165,7 +166,12 @@ export default function ProductCard({
   const hasFetching = competitors.some(c => fetchingIds[c.id])
   const atLimit = competitorLimit !== Infinity && competitors.length >= competitorLimit
   const productCurrency = product.currency_code ?? 'USD'
-  const ourPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
+  const productVatIncluded = product.vat_included ?? false
+  const ourPrice = product.our_price !== null
+    ? (showVat
+      ? (productVatIncluded ? product.our_price : applyVat(product.our_price, vatRate))
+      : (productVatIncluded ? removeVat(product.our_price, vatRate) : product.our_price))
+    : null
 
   const handleCurrencyChange = async (currencyCode: string) => {
     const res = await fetch('/api/products/currency', {
@@ -396,6 +402,17 @@ export default function ProductCard({
                           )}
                         </div>
 
+                        <div className="mt-2 flex items-center gap-2">
+                          <label className="text-xs text-gray-700">Fetched currency:</label>
+                          <select
+                            value={normalizeCurrencyCode(pending.currency)}
+                            onChange={(e) => onPendingCurrencyChange(comp.id, e.target.value)}
+                            className="text-xs border border-amber-300 rounded-md px-2 py-1 outline-none focus:border-amber-500 bg-white"
+                          >
+                            {SUPPORTED_CURRENCIES.map(code => <option key={code} value={code}>{code}</option>)}
+                          </select>
+                        </div>
+
                         {vatRate > 0 && (
                           <label className="inline-flex items-center gap-2 mt-1.5 text-xs text-gray-700 cursor-pointer">
                             <input
@@ -419,7 +436,15 @@ export default function ProductCard({
                               className="text-xs font-semibold border border-amber-300 text-amber-700 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-colors"
                               title="Move decimal one step to the left"
                             >
-                              Modify
+                              Left
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onPendingDecimalShift(comp.id, pending.decimalShift - 1)}
+                              className="text-xs font-semibold border border-amber-300 text-amber-700 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-colors"
+                              title="Move decimal one step to the right"
+                            >
+                              Right
                             </button>
                             {pending.decimalShift !== 0 && (
                               <button

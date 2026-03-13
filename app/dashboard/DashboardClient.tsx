@@ -9,7 +9,7 @@ import AddProductModal from '@/components/AddProductModal'
 import AlertBadge from '@/components/AlertBadge'
 import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/components/VatCountrySelector'
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
-import { applyVat } from '@/lib/vat'
+import { applyVat, removeVat } from '@/lib/vat'
 
 interface ScrapedCandidate {
   metric: string
@@ -594,6 +594,15 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                           return { ...prev, [competitorId]: { ...current, selectedMetric: metric } }
                         })
                       }}
+                      onPendingCurrencyChange={(competitorId, currency) => {
+                        const normalizedCurrency = normalizeCurrencyCode(currency)
+                        console.log('[pending] user adjusted fetched currency', { competitorId, currency: normalizedCurrency })
+                        setPendingPrices(prev => {
+                          const current = prev[competitorId]
+                          if (!current) return prev
+                          return { ...prev, [competitorId]: { ...current, currency: normalizedCurrency } }
+                        })
+                      }}
                       onPendingDecimalShift={handlePendingDecimalShift}
                       onConfirmPrice={handleConfirmPrice}
                       onRejectPrice={handleRejectPrice}
@@ -660,7 +669,12 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                         <div className="border-t border-gray-100 px-5 pb-4 pt-3 space-y-2">
                           {group.entries.map(({ comp, product }) => {
                             const priceWithVat = comp.last_price !== null ? applyVat(comp.last_price, showVat ? vatRate : 0) : null
-                            const productPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
+                            const productVatIncluded = product.vat_included ?? false
+                            const productPrice = product.our_price !== null
+                              ? (showVat
+                                ? (productVatIncluded ? product.our_price : applyVat(product.our_price, vatRate))
+                                : (productVatIncluded ? removeVat(product.our_price, vatRate) : product.our_price))
+                              : null
                             const cheaper = priceWithVat !== null && productPrice !== null && priceWithVat < productPrice
                             const currency = normalizeCurrencyCode(comp.last_price_currency ?? product.currency_code ?? 'USD')
 

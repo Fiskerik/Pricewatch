@@ -1,7 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
-import { normalizeCurrencyCode } from '@/lib/currency'
+import { CurrencyCode, normalizeCurrencyCode } from '@/lib/currency'
+
+const ratesCache = new Map<CurrencyCode, { expiresAt: number; rates: Record<string, number> }>()
+
+async function getRates(base: CurrencyCode): Promise<Record<string, number>> {
+  const now = Date.now()
+  const cached = ratesCache.get(base)
+  if (cached && cached.expiresAt > now) return cached.rates
+
+  const apiKey = process.env.EXCHANGE_RATE_API_KEY
+  if (!apiKey) {
+    throw new Error('EXCHANGE_RATE_API_KEY is not configured')
+  }
+
+  const res = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/${base}`, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(5000),
+  })
+
+  if (!res.ok) {
+    throw new Error(`FX rate fetch failed (${res.status})`)
+  }
+
+  const payload = await res.json()
+  if (payload?.result !== 'success' || !payload?.conversion_rates) {
+    throw new Error(payload?.['error-type'] ? `FX error: ${payload['error-type']}` : 'FX response missing conversion_rates')
+  }
+
+  const rates = payload.conversion_rates as Record<string, number>
+  ratesCache.set(base, { rates, expiresAt: now + 1000 * 60 * 15 })
+  return rates
+}
+
+async function convertAmount(amount: number, from: CurrencyCode, to: CurrencyCode): Promise<number> {
+  if (from === to) return amount
+  const rates = await getRates(from)
+  const rate = rates[to]
+  if (!rate) {
+    throw new Error(`Missing rate ${from}->${to}`)
+  }
+  return amount * rate
+}
 
 export async function POST(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
@@ -39,20 +80,70 @@ export async function POST(req: NextRequest) {
   if (!store) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
 
   const currentProductCurrency = normalizeCurrencyCode(product.currency_code, 'USD')
-  console.log('[products/currency] preserving stored numeric prices, switching display currency only', {
-    productId,
-    from: currentProductCurrency,
-    to: normalizedCurrencyCode,
-  })
 
   const { data: competitorsSnapshot } = await supabase
     .from('competitor_urls')
     .select('id, last_price, last_price_currency')
     .eq('product_id', productId)
 
+  let convertedOurPrice = product.our_price
+  if (typeof product.our_price === 'number' && Number.isFinite(product.our_price) && currentProductCurrency !== normalizedCurrencyCode) {
+    try {
+      convertedOurPrice = await convertAmount(product.our_price, currentProductCurrency, normalizedCurrencyCode)
+      console.log('[products/currency] converted product price', {
+        productId,
+        from: currentProductCurrency,
+        to: normalizedCurrencyCode,
+        original: product.our_price,
+        converted: convertedOurPrice,
+      })
+    } catch (error) {
+      console.log('[products/currency] product conversion failed', {
+        productId,
+        from: currentProductCurrency,
+        to: normalizedCurrencyCode,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return NextResponse.json({ error: 'Currency conversion failed for product price' }, { status: 502 })
+    }
+  }
+
+  const convertedCompetitors = await Promise.all((competitorsSnapshot ?? []).map(async (comp) => {
+    if (typeof comp.last_price !== 'number' || !Number.isFinite(comp.last_price)) {
+      return comp
+    }
+
+    const originCurrency = normalizeCurrencyCode(comp.last_price_currency || currentProductCurrency, currentProductCurrency)
+
+    if (originCurrency === normalizedCurrencyCode) {
+      return {
+        ...comp,
+        last_price_currency: normalizedCurrencyCode,
+      }
+    }
+
+    try {
+      const converted = await convertAmount(comp.last_price, originCurrency, normalizedCurrencyCode)
+      return {
+        ...comp,
+        last_price: converted,
+        last_price_currency: normalizedCurrencyCode,
+      }
+    } catch (error) {
+      console.log('[products/currency] competitor conversion failed', {
+        productId,
+        competitorId: comp.id,
+        from: originCurrency,
+        to: normalizedCurrencyCode,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return comp
+    }
+  }))
+
   const { data, error } = await supabase
     .from('products')
-    .update({ currency_code: normalizedCurrencyCode, our_price: product.our_price })
+    .update({ currency_code: normalizedCurrencyCode, our_price: convertedOurPrice })
     .eq('id', productId)
     .select('id, currency_code, our_price')
     .single()
@@ -62,5 +153,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ product: data, competitors: competitorsSnapshot ?? [] })
+  return NextResponse.json({ product: data, competitors: convertedCompetitors })
 }

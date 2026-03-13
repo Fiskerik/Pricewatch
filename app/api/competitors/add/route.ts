@@ -3,7 +3,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase'
 import { cleanUrl } from '@/lib/scraper'
-import { evaluateCompetitorMatch, LOW_CONFIDENCE_THRESHOLD, runCompetitorPreflight } from '@/lib/competitorMatch'
+import { evaluateCompetitorMatch, runCompetitorPreflight } from '@/lib/competitorMatch'
 
 function normalizeCompetitorUrl(rawUrl: string): string {
   const parsed = new URL(rawUrl.trim())
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { productId, url, label, initialPrice, initialCurrency, overrideLowConfidence } = await req.json()
+  const { productId, url, label, initialPrice, initialCurrency } = await req.json()
   if (!productId || !url) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   let normalizedUrl = ''
@@ -60,26 +60,12 @@ export async function POST(req: NextRequest) {
       confidence: matchConfidence,
       mismatchReasons,
       matchedSignals: evaluation.matchedSignals,
-      overrideLowConfidence: Boolean(overrideLowConfidence),
     })
   } catch (err) {
     mismatchReasons = ['Unable to verify product signals from the competitor page during preflight scrape.']
     matchConfidence = 0.2
     console.log('[competitors/add] preflight failed', { productId, normalizedUrl, error: String(err) })
   }
-
-  if (matchConfidence < LOW_CONFIDENCE_THRESHOLD && !overrideLowConfidence) {
-    return NextResponse.json({
-      error: 'Low confidence match. Please verify this is the same product before saving.',
-      requiresOverride: true,
-      preflight: {
-        confidence: matchConfidence,
-        mismatchReasons,
-        extractedSignals: preflightSignals,
-      },
-    }, { status: 409 })
-  }
-
   const { data: competitor, error } = await admin
     .from('competitor_urls')
     .insert({
