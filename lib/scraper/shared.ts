@@ -15,6 +15,8 @@ export interface ExtractResult {
   metricUsed: string | null
 }
 
+export type FailureReasonCode = 'timeout' | 'blocked' | 'parse_fail' | 'no_candidate'
+
 interface CandidateScore {
   metric: string
   source: string
@@ -33,6 +35,8 @@ export interface ScrapeResult {
   metricUsed: string | null
   matchedPreferredMetric: boolean
   error?: string
+  failureCode?: FailureReasonCode
+  platform?: 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic' | 'unknown'
 }
 
 export interface ScrapePriceOptions {

@@ -4,7 +4,9 @@ import { scrapeHmProductDirect } from './extractors/hm'
 import { extractMagento, detectMagento } from './extractors/magento'
 import { extractShopify, detectShopify, scrapeShopifyProductJson } from './extractors/shopify'
 import { extractWoocommerce, detectWoocommerce } from './extractors/woocommerce'
-import { dedupeCandidates, ExtractResult, pickCandidate, ScrapePriceOptions, ScrapeResult, ScrapedCandidate } from './shared'
+import { dedupeCandidates, ExtractResult, FailureReasonCode, pickCandidate, ScrapePriceOptions, ScrapeResult, ScrapedCandidate } from './shared'
+
+type PlatformName = 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic'
 
 async function renderWithScraperApi(url: string): Promise<string> {
   const key = process.env.SCRAPER_API_KEY
@@ -38,6 +40,13 @@ async function renderWithBrowserless(url: string): Promise<string> {
   return res.text()
 }
 
+function classifyFailure(errorMessage: string): FailureReasonCode {
+  const message = errorMessage.toLowerCase()
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout'
+  if (message.includes('403') || message.includes('429') || message.includes('captcha') || message.includes('forbidden') || message.includes('access denied') || message.includes('blocked')) return 'blocked'
+  return 'parse_fail'
+}
+
 async function renderJs(url: string): Promise<string> {
   const providers = [
     { name: 'ScraperAPI', fn: renderWithScraperApi, key: process.env.SCRAPER_API_KEY },
@@ -54,8 +63,8 @@ async function renderJs(url: string): Promise<string> {
   throw new Error('All JS renderers failed')
 }
 
-function detectPlatform(url: string, html: string): Array<'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic'> {
-  const chain: Array<'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic'> = []
+function detectPlatform(url: string, html: string): PlatformName[] {
+  const chain: PlatformName[] = []
 
   if (detectShopify(url, html)) chain.push('shopify')
   if (detectWoocommerce(url, html)) chain.push('woocommerce')
@@ -66,7 +75,7 @@ function detectPlatform(url: string, html: string): Array<'shopify' | 'woocommer
   return Array.from(new Set(chain))
 }
 
-async function runExtractor(name: 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic', html: string, url: string, options?: ScrapePriceOptions): Promise<ExtractResult> {
+async function runExtractor(name: PlatformName, html: string, url: string, options?: ScrapePriceOptions): Promise<ExtractResult> {
   if (name === 'shopify') return extractShopify(html, url, options)
   if (name === 'woocommerce') return extractWoocommerce(html, url, options)
   if (name === 'magento') return extractMagento(html, url, options)
@@ -76,6 +85,7 @@ async function runExtractor(name: 'shopify' | 'woocommerce' | 'magento' | 'bigco
 
 export async function scrapePrice(url: string, _targetCurrency?: string, options?: ScrapePriceOptions): Promise<ScrapeResult> {
   const allCandidates: ScrapedCandidate[] = []
+  let primaryPlatform: PlatformName | 'unknown' = 'unknown'
 
   if (url.includes('hm.com')) {
     const hmDirect = await scrapeHmProductDirect(url, options)
@@ -90,6 +100,7 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
   try {
     const html = await renderJs(url)
     const extractorChain = detectPlatform(url, html)
+    primaryPlatform = extractorChain.find(name => name !== 'generic') ?? 'generic'
     console.log('[scraper] extractor chain', { url, extractorChain })
 
     for (const extractorName of extractorChain) {
@@ -98,6 +109,7 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
     }
   } catch (err) {
     if (allCandidates.length === 0) {
+      const errorText = String(err)
       return {
         price: null,
         scrapedCurrency: null,
@@ -105,7 +117,9 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
         candidates: [],
         metricUsed: null,
         matchedPreferredMetric: false,
-        error: String(err),
+        error: errorText,
+        failureCode: classifyFailure(errorText),
+        platform: primaryPlatform,
       }
     }
   }
@@ -120,6 +134,8 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
       metricUsed: null,
       matchedPreferredMetric: false,
       error: 'Price not found',
+      failureCode: 'no_candidate',
+      platform: primaryPlatform,
     }
   }
 
@@ -139,6 +155,7 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
     matchedPreferredMetric: picked.matchedPreferredMetric,
     method: deduped.some(c => c.source.startsWith('Shopify')) ? 'direct' : 'js-render',
     metricUsed: picked.metricUsed,
+    platform: primaryPlatform,
   }
 }
 
