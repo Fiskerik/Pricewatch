@@ -36,7 +36,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
 
   const SidebarInner = (
     <div className="flex flex-col h-full">
-      {/* Logo */}
       <div className="px-5 pb-5 border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2" onClick={() => setMobileOpen(false)}>
           <Image src="/logo.png" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
@@ -44,7 +43,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         </Link>
       </div>
 
-      {/* Store badge */}
       <div className="px-5 py-3 border-b border-gray-100">
         {store?.shop_domain ? (
           <>
@@ -58,7 +56,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         )}
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV.map(item => (
           <Link
@@ -77,7 +74,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         ))}
       </nav>
 
-      {/* Plan usage */}
       <div className="px-3 mb-3">
         <div className="bg-purple-50 rounded-xl p-3.5">
           <div className="flex justify-between items-center mb-1">
@@ -99,7 +95,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         </div>
       </div>
 
-      {/* User */}
       <div className="px-3 pt-3 border-t border-gray-100">
         <div className="flex items-center gap-2 px-2 py-1.5">
           <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600 shrink-0">
@@ -114,7 +109,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
 
   return (
     <>
-      {/* ── Mobile top bar ───────────────────────────────────── */}
       <div className="lg:hidden w-full bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
         <Link href="/" className="flex items-center gap-2">
           <Image src="/logo.png" alt="PriceWatch logo" width={24} height={24} className="rounded-md" />
@@ -129,7 +123,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         </button>
       </div>
 
-      {/* ── Mobile drawer backdrop ───────────────────────────── */}
       {mobileOpen && (
         <button
           type="button"
@@ -139,7 +132,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         />
       )}
 
-      {/* ── Mobile drawer ────────────────────────────────────── */}
       <aside className={`
         lg:hidden fixed top-0 left-0 z-50 h-full w-72 max-w-[85vw]
         bg-white border-r border-gray-100 py-5 shadow-2xl
@@ -149,7 +141,6 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
         {SidebarInner}
       </aside>
 
-      {/* ── Desktop sidebar ──────────────────────────────────── */}
       <aside className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 bg-white border-r border-gray-100 py-5 sticky top-0 h-screen">
         {SidebarInner}
       </aside>
