@@ -85,9 +85,20 @@ export function detectCurrency(raw: string, url: string): CurrencyCode {
   }
 
   try {
-    const host = new URL(url).hostname.toLowerCase()
+    const parsedUrl = new URL(url)
+    const host = parsedUrl.hostname.toLowerCase()
+    const path = parsedUrl.pathname.toLowerCase()
     for (const [suffix, code] of Object.entries(DOMAIN_CURRENCY)) {
       if (host.endsWith(suffix)) return code
+    }
+
+    if (host.includes('hm.com')) {
+      if (/\/(sv_se|sv)\b/.test(path)) return 'SEK'
+      if (/\/(fi_fi|fi)\b/.test(path)) return 'EUR'
+      if (/\/(da_dk|dk)\b/.test(path)) return 'DKK'
+      if (/\/(nb_no|nn_no|no)\b/.test(path)) return 'NOK'
+      if (/\/(en_gb|gb)\b/.test(path)) return 'GBP'
+      if (/\/(en_us|us)\b/.test(path)) return 'USD'
     }
 
     if (host.includes('etsy.com')) {
@@ -95,6 +106,8 @@ export function detectCurrency(raw: string, url: string): CurrencyCode {
       if (url.includes('/se-')) return 'SEK'
       if (url.includes('/no-')) return 'NOK'
       if (url.includes('/dk-')) return 'DKK'
+      if (url.includes('/en-gb/')) return 'GBP'
+      if (url.includes('/en-us/')) return 'USD'
       return 'EUR'
     }
   } catch {

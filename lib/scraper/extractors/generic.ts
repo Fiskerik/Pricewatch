@@ -15,8 +15,11 @@ const PRICE_SELECTORS = [
   '.product-price-now', '.product-price__value', '.product__price-now',
   '.wt-text-title-03',
   '.wt-text-title-smaller',
+  '[data-selector="price-only"] .wt-text-title-larger',
+  '[data-buy-box-region="price"] .wt-text-title-larger',
   '.price-item--regular',
   '.price-item--sale',
+  '[data-testid="white-price"]',
   '[data-testid="price-value"]',
   '[class*="ProductPriceCurrent"]',
   '[class*="product-price-current"]',
@@ -117,6 +120,32 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
       })
     } catch {
       // ignore malformed block
+    }
+  }
+
+  const etsyBuyBoxMatch = html.match(/data-buy-box-region=\"price\"[\s\S]{0,800}?wt-text-title-larger[^>]*>\s*([^<]+)\s*</i)
+  if (etsyBuyBoxMatch) {
+    const amount = parsePriceText(etsyBuyBoxMatch[1])
+    if (amount) {
+      addCandidate({
+        metric: 'etsy.buybox.price-only',
+        source: 'Etsy buy box',
+        price: amount,
+        currency: detectCurrency(etsyBuyBoxMatch[1], url),
+      })
+    }
+  }
+
+  const etsyStateCurrencyMatch = html.match(/"listing"\s*:\s*\{[\s\S]{0,6000}?"price"\s*:\s*\{[\s\S]{0,400}?"amount"\s*:\s*"([\d.,]+)"[\s\S]{0,200}?"currency_code"\s*:\s*"([A-Z]{3})"/i)
+  if (etsyStateCurrencyMatch) {
+    const amount = parsePriceText(etsyStateCurrencyMatch[1])
+    if (amount) {
+      addCandidate({
+        metric: 'etsy.state.listing.price.amount',
+        source: 'Etsy state',
+        price: amount,
+        currency: etsyStateCurrencyMatch[2],
+      })
     }
   }
 

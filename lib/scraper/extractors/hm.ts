@@ -98,15 +98,15 @@ export async function scrapeHmProductDirect(url: string, options?: ScrapePriceOp
     if (!res.ok) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
     const html = await res.text()
 
+    const htmlResult = await extractGeneric(html, url, options)
+    if (htmlResult.candidates.length > 0) {
+      console.log('[scraper][hm] direct fetch generic extraction succeeded', { candidateCount: htmlResult.candidates.length })
+      return htmlResult
+    }
+
     if (!html.includes('__NEXT_DATA__')) {
       console.log('[scraper][hm] direct fetch: no __NEXT_DATA__, falling through to JS render')
       return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
-    }
-
-    const htmlResult = await extractGeneric(html, url, options)
-    if (htmlResult.candidates.length > 0) {
-      console.log('[scraper][hm] direct SSR fetch succeeded', { candidateCount: htmlResult.candidates.length })
-      return htmlResult
     }
 
     const buildIdMatch = html.match(/"buildId"\s*:\s*"([^"]+)"/)
