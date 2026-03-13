@@ -32,11 +32,6 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (competitorError || !competitor) {
-      console.log('[mock/send-alert] competitor lookup failed', {
-        userId: user.id,
-        competitorId,
-        competitorError: competitorError?.message ?? null,
-      })
       return NextResponse.json({ error: 'Competitor not found' }, { status: 404 })
     }
 
@@ -52,18 +47,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Selected competitor has no existing baseline price yet.' }, { status: 400 })
     }
 
-    console.log('[mock/send-alert] attempting test alert send', {
-      userId: user.id,
-      competitorId,
-      email,
-      emailProvider: process.env.EMAIL_PROVIDER ?? 'resend',
-      hasResendKey: Boolean(process.env.RESEND_KEY),
-      hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
-      emailFrom: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
-      oldPrice,
-      newPrice: parsedNewPrice,
-    })
-
     const sendResult = await sendPriceAlert({
       to: email,
       productTitle: title,
@@ -76,26 +59,11 @@ export async function POST(req: NextRequest) {
     })
 
     if (sendResult.skipped) {
-      console.log('[mock/send-alert] skipped test alert send', {
-        userId: user.id,
-        competitorId,
-        email,
-        sendResult,
-      })
       return NextResponse.json({
         error: 'Email provider is not configured. Set RESEND_KEY or RESEND_API_KEY and retry.',
         sendResult,
       }, { status: 503 })
     }
-
-    console.log('[mock/send-alert] sent test alert', {
-      userId: user.id,
-      competitorId,
-      email,
-      oldPrice,
-      newPrice: parsedNewPrice,
-      sendResult,
-    })
 
     return NextResponse.json({
       sent: true,
@@ -109,12 +77,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error while sending test email'
-
-    console.error('[mock/send-alert] test alert send failed', {
-      userId: user.id,
-      error: message,
-    })
-
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -43,17 +43,20 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
   try { hostname = new URL(competitorUrl).hostname } catch { /* keep raw */ }
   const name = competitorLabel || hostname
 
-  const subject = `${dropped ? '↓' : '↑'} ${name} ${dropped ? 'dropped' : 'raised'} price on "${productTitle}" — now ${fmtPrice(newPrice, currency)}`
+  const subject = `${name} ${dropped ? 'price drop' : 'price update'}: ${fmtPrice(newPrice, currency)} for ${productTitle}`
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:40px 0;background:#f4f4f5;font-family:Inter,system-ui,sans-serif">
-<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
-  <div style="background:${accent};padding:28px 32px">
-    <div style="font-size:11px;color:rgba(255,255,255,0.75);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Price ${dropped ? 'Drop' : 'Increase'} Detected</div>
-    <div style="font-size:22px;font-weight:800;color:#fff">${name}</div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px">${productTitle}</div>
+<body style="margin:0;padding:32px 12px;background:#f4f4f5;font-family:Inter,system-ui,sans-serif;color:#18181b">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
+  <div style="background:${accent};padding:24px 28px">
+    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">PriceWatch Alert</div>
+    <div style="font-size:24px;line-height:1.25;font-weight:800;color:#fff;margin:0">${dropped ? 'Price dropped' : 'Price updated'}</div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.86);margin-top:6px">${name} changed price for <strong>${productTitle}</strong>.</div>
   </div>
-  <div style="padding:28px 32px">
+  <div style="padding:24px 28px">
+    <div style="font-size:14px;color:#3f3f46;line-height:1.6;margin-bottom:16px">
+      We detected a new competitor price and compared it to your latest tracked value.
+    </div>
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
       <tr>
         <td width="48%" style="background:#f4f4f5;border-radius:12px;padding:16px;text-align:center">
@@ -67,7 +70,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
         </td>
       </tr>
     </table>
-    <div style="background:#f9f9fb;border-radius:8px;padding:12px 16px;font-size:13px;color:#52525b;margin-bottom:24px">
+    <div style="background:#f9f9fb;border-radius:10px;padding:12px 16px;font-size:13px;color:#52525b;margin-bottom:22px;line-height:1.5">
       ${dropped ? '↓' : '↑'} <strong>${fmtPrice(diff, currency)}${pct === 'N/A' ? '' : ` (${pct}%)`}</strong> ${dropped ? 'cheaper' : 'more expensive'} than before
       ${ourPrice ? ` &nbsp;&middot;&nbsp; Your price: <strong>${fmtPrice(ourPrice, currency)}</strong>` : ''}
     </div>
@@ -75,7 +78,8 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
       View on ${name} &rarr;
     </a>
   </div>
-  <div style="padding:16px 32px;border-top:1px solid #f0f0f0;font-size:11px;color:#a1a1aa;text-align:center">
+  <div style="padding:16px 28px 20px;border-top:1px solid #f0f0f0;font-size:11px;color:#71717a;text-align:center;line-height:1.6">
+    Not seeing alerts? Check your spam/junk folder and add <strong>onboarding@resend.dev</strong> as a safe sender.<br/>
     PriceWatch &nbsp;&middot;&nbsp;
     <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color:#a1a1aa;text-decoration:underline">Dashboard</a>
     &nbsp;&middot;&nbsp;
@@ -87,23 +91,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
   const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
 
-  console.log('[email] preparing send', {
-    provider: 'resend',
-    hasApiKey: Boolean(apiKey),
-    hasResendKey: Boolean(process.env.RESEND_KEY),
-    hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
-    to,
-    from,
-    subject,
-  })
-
   if (!apiKey) {
-    console.warn('[email] RESEND_KEY/RESEND_API_KEY not set — skipping alert', {
-      provider: 'resend',
-      to,
-      from,
-      subject,
-    })
     return {
       skipped: true,
       reason: 'missing_resend_api_key',
@@ -118,15 +106,6 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
   const { Resend } = await import('resend')
   const resend = new Resend(apiKey)
   const result = await resend.emails.send({ from, to, subject, html })
-
-  console.log('[email] provider response', {
-    provider: 'resend',
-    to,
-    from,
-    messageId: result?.data?.id ?? null,
-    hasError: Boolean(result?.error),
-    error: result?.error?.message ?? null,
-  })
 
   if (result?.error) {
     throw new Error(`Resend send failed: ${result.error.message}`)

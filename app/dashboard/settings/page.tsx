@@ -70,7 +70,7 @@ function SettingsContent() {
           .order('created_at', { ascending: false })
 
         if (competitorError) {
-          console.log('[settings] failed to load competitors for mock panel', { error: competitorError.message })
+          setMockMessage({ type: 'error', text: 'Could not load competitors for testing.' })
         } else {
           const list = ((competitors || []) as MockCompetitor[]).map(item => ({
             ...item,
@@ -156,11 +156,6 @@ function SettingsContent() {
         return
       }
 
-      console.log('[settings] queued mock price for cron', {
-        selectedCompetitorId,
-        parsedPrice,
-      })
-
       setMockMessage({ type: 'success', text: 'Mock price queued. Next cron run will use this value once.' })
     } catch {
       setMockMessage({ type: 'error', text: 'Could not queue mock price. Try again.' })
@@ -191,11 +186,6 @@ function SettingsContent() {
         setMockMessage({ type: 'error', text: data?.error ?? 'Failed to send test email.' })
         return
       }
-
-      console.log('[settings] sent mock email', {
-        selectedCompetitorId,
-        parsedPrice,
-      })
 
       setMockMessage({ type: 'success', text: 'Test email sent to your registered email.' })
     } catch {

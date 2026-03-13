@@ -49,23 +49,24 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
 
-  // VAT state lifted up — avoids flash-of-no-VAT in ProductCard
   const [vatCountryCode, setVatCountryCode] = useState<string>('SE')
   const [vatRate, setVatRate] = useState<number>(25)
   const [showVat, setShowVat] = useState(true)
 
-  // View + filter
   const [viewMode, setViewMode] = useState<ViewMode>('products')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null)
   const [productLayout, setProductLayout] = useState<ProductLayout>('list')
   const [draggingProductId, setDraggingProductId] = useState<string | null>(null)
 
-  // Background fetch
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
   const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
   const [decimalShifts, setDecimalShifts] = useState<Record<string, number>>({})
+  const [testCompetitorId, setTestCompetitorId] = useState<string>('')
+  const [testEmailPriceInput, setTestEmailPriceInput] = useState<string>('')
+  const [testEmailLoading, setTestEmailLoading] = useState(false)
+  const [testEmailMessage, setTestEmailMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const applyDecimalShift = (value: number, shift: number) => {
     if (!Number.isFinite(value) || !Number.isFinite(shift) || shift === 0) return value
@@ -101,9 +102,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             return aIdx - bIdx
           })
         })
-      } catch {
-        console.log('[dashboard] failed to parse product order, keeping default order')
-      }
+      } catch {}
     }
 
     const storedMetricsRaw = window.localStorage.getItem('pricewatch:preferredMetrics')
@@ -111,9 +110,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       try {
         const parsed = JSON.parse(storedMetricsRaw) as Record<string, string>
         setPreferredMetrics(parsed)
-      } catch {
-        console.log('[dashboard] failed to parse preferred metrics map')
-      }
+      } catch {}
     }
 
     const storedDecimalShiftsRaw = window.localStorage.getItem('pricewatch:decimalShifts')
@@ -121,9 +118,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       try {
         const parsed = JSON.parse(storedDecimalShiftsRaw) as Record<string, number>
         setDecimalShifts(parsed)
-      } catch {
-        console.log('[dashboard] failed to parse decimal shifts map')
-      }
+      } catch {}
     }
   }, [])
 
@@ -182,6 +177,39 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     )
   }, [products, searchQuery])
 
+  const testableCompetitors = useMemo(() => {
+    return products.flatMap(product =>
+      (product.competitor_urls ?? []).map(competitor => ({
+        id: competitor.id,
+        label: competitor.label,
+        url: competitor.url,
+        lastPrice: competitor.last_price,
+        currency: normalizeCurrencyCode(competitor.last_price_currency ?? product.currency_code ?? 'USD'),
+        productTitle: product.title,
+      }))
+    )
+  }, [products])
+
+  const selectedTestCompetitor = testableCompetitors.find(competitor => competitor.id === testCompetitorId) ?? null
+
+  useEffect(() => {
+    if (testableCompetitors.length === 0) {
+      setTestCompetitorId('')
+      setTestEmailPriceInput('')
+      return
+    }
+
+    const active = testableCompetitors.find(competitor => competitor.id === testCompetitorId)
+    const next = active ?? testableCompetitors[0]
+    if (!active) {
+      setTestCompetitorId(next.id)
+    }
+
+    if (!testEmailPriceInput && typeof next.lastPrice === 'number' && Number.isFinite(next.lastPrice) && next.lastPrice > 0) {
+      setTestEmailPriceInput((next.lastPrice * 0.95).toFixed(2))
+    }
+  }, [testableCompetitors, testCompetitorId, testEmailPriceInput])
+
   const triggerBackgroundFetch = (competitorId: string) => {
     setFetchingIds(prev => ({ ...prev, [competitorId]: true }))
     fetch('/api/competitors/fetch', {
@@ -205,15 +233,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           if (rawPrice == null) return
           const savedDecimalShift = decimalShifts[competitorId] ?? 0
           const shiftedPrice = applyDecimalShift(rawPrice, savedDecimalShift)
-          console.log('[fetch] pending price prepared', {
-            competitorId,
-            rawPrice,
-            fromFallbackCandidate: comp?.last_price == null,
-            savedDecimalShift,
-            shiftedPrice,
-            candidateCount: candidates.length,
-          })
-
           const selectedMetric =
             (typeof data?.metricUsed === 'string' && data.metricUsed)
             || preferredMetrics[competitorId]
@@ -258,7 +277,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
   const handlePendingDecimalShift = (competitorId: string, decimalShift: number) => {
     const safeShift = Number.isFinite(decimalShift) ? Math.max(-6, Math.min(6, Math.trunc(decimalShift))) : 0
-    console.log('[decimal] updated decimal shift', { competitorId, safeShift })
     setPendingPrices(prev => {
       const current = prev[competitorId]
       if (!current) return prev
@@ -293,8 +311,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
     const finalPrice = pending.price
     const finalCurrency = (pending.currency || 'USD').toUpperCase()
-    console.log('[confirm] preserving scraped price/currency', { id, finalPrice, finalCurrency })
-
     setProducts(prev => prev.map(p => ({
       ...p,
       competitor_urls: (p.competitor_urls ?? []).map(c =>
@@ -423,13 +439,42 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     })
   }
 
+  const handleSendOnboardingTestEmail = async () => {
+    const parsedPrice = Number(testEmailPriceInput)
+    if (!testCompetitorId || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      setTestEmailMessage({ type: 'error', text: 'Select a competitor and enter a valid test price.' })
+      return
+    }
+
+    setTestEmailLoading(true)
+    setTestEmailMessage(null)
+
+    try {
+      const res = await fetch('/api/mock/send-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competitorId: testCompetitorId, newPrice: parsedPrice }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        setTestEmailMessage({ type: 'error', text: data?.error ?? 'Failed to send test email.' })
+        return
+      }
+
+      setTestEmailMessage({ type: 'success', text: 'Test email sent. Check your inbox and spam/junk folder.' })
+    } catch {
+      setTestEmailMessage({ type: 'error', text: 'Could not send test email. Try again.' })
+    } finally {
+      setTestEmailLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Sidebar store={store} user={user} plan={plan} productCount={products.length} planLimit={limits.products} />
 
-      <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 min-w-0 overflow-x-hidden">
-
-        {/* Header */}
+      <main className="flex-1 px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 min-w-0 overflow-x-hidden">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-5 sm:mb-7">
           <div>
             <h1 className="text-lg sm:text-xl font-extrabold tracking-tight">Dashboard</h1>
@@ -437,13 +482,13 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               Checks run {limits.checkFrequency} · {products.length} products · {totalCompetitors} URLs tracked
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex w-full sm:w-auto items-center gap-2 flex-wrap">
             <VatCountrySelector countryCode={vatCountryCode} onChange={handleVatCountryChange} />
             {vatRate > 0 && (
               <button
                 type="button"
                 onClick={() => { const n = !showVat; setShowVat(n); window.localStorage.setItem('pricewatch:showVat', String(n)) }}
-                className={`flex items-center gap-2 border rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${showVat ? 'bg-black text-white border-black' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+                className={`flex items-center justify-center gap-2 border rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${showVat ? 'bg-black text-white border-black' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
               >
                 VAT {showVat ? 'on' : 'off'}
               </button>
@@ -451,15 +496,14 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             <button
               onClick={() => setShowAddProduct(true)}
               disabled={products.length >= limits.products && limits.products !== Infinity}
-              className="bg-black text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              className="bg-black text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
             >
               + Add Product
             </button>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5 lg:mb-7">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5 lg:mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
             { label: 'Changes Today', value: changedToday, sub: 'price changes', icon: '📊', highlight: changedToday > 0 },
@@ -478,7 +522,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           ))}
         </div>
 
-        {/* Alerts */}
         {alerts.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
             <h2 className="font-bold text-sm mb-4">Recent Alerts</h2>
@@ -488,7 +531,58 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           </div>
         )}
 
-        {/* View toggle + search */}
+        {products.length > 0 && totalCompetitors > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 mb-4">
+            <h2 className="font-bold text-sm">Test your email flow</h2>
+            <p className="text-xs text-gray-500 mt-1 mb-3">
+              Great start — you can send a real sample alert now. If you don&apos;t see it, check spam/junk and add
+              <span className="font-semibold text-gray-700"> onboarding@resend.dev </span>
+              as a safe sender.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <select
+                value={testCompetitorId}
+                onChange={(event) => setTestCompetitorId(event.target.value)}
+                className="sm:col-span-2 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
+              >
+                {testableCompetitors.map((competitor) => (
+                  <option key={competitor.id} value={competitor.id}>
+                    {competitor.productTitle} · {competitor.label ?? competitor.url}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={testEmailPriceInput}
+                onChange={(event) => setTestEmailPriceInput(event.target.value)}
+                placeholder="Test price"
+                inputMode="decimal"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
+              />
+            </div>
+
+            <div className="mt-2 text-xs text-gray-500">
+              Current saved price: {selectedTestCompetitor?.lastPrice != null
+                ? formatMoney(selectedTestCompetitor.lastPrice, selectedTestCompetitor.currency)
+                : 'Not saved yet. Confirm one fetched price first.'}
+            </div>
+
+            <button
+              onClick={handleSendOnboardingTestEmail}
+              disabled={testEmailLoading || selectedTestCompetitor?.lastPrice == null}
+              className="mt-3 w-full sm:w-auto text-sm font-semibold text-white bg-black px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+            >
+              {testEmailLoading ? 'Sending...' : 'Send test email'}
+            </button>
+
+            {testEmailMessage && (
+              <div className={`mt-3 text-sm rounded-lg px-3 py-2 ${testEmailMessage.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                {testEmailMessage.text}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-4">
           <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-0.5 w-full sm:w-auto">
             <button
@@ -538,7 +632,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           </span>
         </div>
 
-        {/* Products view */}
         {viewMode === 'products' && (
           <div>
             {products.length === 0 ? (
@@ -599,7 +692,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       }}
                       onPendingCurrencyChange={(competitorId, currency) => {
                         const normalizedCurrency = normalizeCurrencyCode(currency)
-                        console.log('[pending] user adjusted fetched currency', { competitorId, currency: normalizedCurrency })
                         setPendingPrices(prev => {
                           const current = prev[competitorId]
                           if (!current) return prev
@@ -617,7 +709,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           </div>
         )}
 
-        {/* Competitor view */}
         {viewMode === 'competitors' && (
           <div className="space-y-3">
             {competitorGroups.length === 0 ? (
