@@ -185,8 +185,9 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
       if (raw && !isNonProductPrice(raw)) {
         const amount = parsePriceText(raw)
         if (amount) {
+          const indicatesStartingPrice = /(from|starting at|ab\s|från|fra\s|desde)/i.test(raw)
           addCandidate({
-            metric: `selector:${selector}`,
+            metric: indicatesStartingPrice ? `selector:${selector}:from` : `selector:${selector}`,
             source: `Selector (${selector})`,
             price: amount,
             currency: detectCurrency(raw, url),

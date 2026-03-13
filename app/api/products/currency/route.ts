@@ -11,27 +11,45 @@ async function getRates(base: CurrencyCode): Promise<Record<string, number>> {
   if (cached && cached.expiresAt > now) return cached.rates
 
   const apiKey = process.env.EXCHANGE_RATE_API_KEY
-  if (!apiKey) {
-    throw new Error('EXCHANGE_RATE_API_KEY is not configured')
+
+  if (apiKey) {
+    const res = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/${base}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (!res.ok) {
+      throw new Error(`FX rate fetch failed (${res.status})`)
+    }
+
+    const payload = await res.json()
+    if (payload?.result !== 'success' || !payload?.conversion_rates) {
+      throw new Error(payload?.['error-type'] ? `FX error: ${payload['error-type']}` : 'FX response missing conversion_rates')
+    }
+
+    const rates = payload.conversion_rates as Record<string, number>
+    ratesCache.set(base, { rates, expiresAt: now + 1000 * 60 * 15 })
+    return rates
   }
 
-  const res = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/${base}`, {
+  console.log('[products/currency] EXCHANGE_RATE_API_KEY missing, falling back to open.er-api.com')
+  const fallbackRes = await fetch(`https://open.er-api.com/v6/latest/${base}`, {
     cache: 'no-store',
     signal: AbortSignal.timeout(5000),
   })
 
-  if (!res.ok) {
-    throw new Error(`FX rate fetch failed (${res.status})`)
+  if (!fallbackRes.ok) {
+    throw new Error(`Fallback FX rate fetch failed (${fallbackRes.status})`)
   }
 
-  const payload = await res.json()
-  if (payload?.result !== 'success' || !payload?.conversion_rates) {
-    throw new Error(payload?.['error-type'] ? `FX error: ${payload['error-type']}` : 'FX response missing conversion_rates')
+  const fallbackPayload = await fallbackRes.json()
+  if (!fallbackPayload?.rates) {
+    throw new Error('Fallback FX response missing rates')
   }
 
-  const rates = payload.conversion_rates as Record<string, number>
-  ratesCache.set(base, { rates, expiresAt: now + 1000 * 60 * 15 })
-  return rates
+  const fallbackRates = fallbackPayload.rates as Record<string, number>
+  ratesCache.set(base, { rates: fallbackRates, expiresAt: now + 1000 * 60 * 15 })
+  return fallbackRates
 }
 
 async function convertAmount(amount: number, from: CurrencyCode, to: CurrencyCode): Promise<number> {
