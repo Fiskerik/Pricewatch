@@ -22,8 +22,7 @@ export async function POST(req: NextRequest) {
       products!inner (
         title, our_price,
         stores!inner (
-          user_id,
-          auth_users:user_id (email)
+          user_id
         )
       )
     `)
@@ -32,10 +31,15 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (competitorError || !competitor) {
+    console.log('[mock/send-alert] competitor lookup failed', {
+      userId: user.id,
+      competitorId,
+      competitorError: competitorError?.message ?? null,
+    })
     return NextResponse.json({ error: 'Competitor not found' }, { status: 404 })
   }
 
-  const email = (competitor as any)?.products?.stores?.auth_users?.email
+  const email = user.email
   const title = (competitor as any)?.products?.title
 
   if (!email || !title) {
