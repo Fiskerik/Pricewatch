@@ -18,6 +18,7 @@ export interface Product {
   handle: string | null
   image_url: string | null
   our_price: number | null
+  vat_included?: boolean | null
   currency_code?: string | null
   created_at: string
   competitor_urls?: CompetitorUrl[]

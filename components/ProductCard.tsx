@@ -166,7 +166,12 @@ export default function ProductCard({
   const hasFetching = competitors.some(c => fetchingIds[c.id])
   const atLimit = competitorLimit !== Infinity && competitors.length >= competitorLimit
   const productCurrency = product.currency_code ?? 'USD'
-  const ourPrice = product.our_price !== null ? applyVat(product.our_price, showVat ? vatRate : 0) : null
+  const productVatIncluded = product.vat_included ?? false
+  const ourPrice = product.our_price !== null
+    ? (showVat
+      ? (productVatIncluded ? product.our_price : applyVat(product.our_price, vatRate))
+      : (productVatIncluded ? removeVat(product.our_price, vatRate) : product.our_price))
+    : null
 
   const handleCurrencyChange = async (currencyCode: string) => {
     const res = await fetch('/api/products/currency', {

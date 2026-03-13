@@ -38,6 +38,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
   const [ourPrice, setOurPrice] = useState(product?.our_price !== null && product?.our_price !== undefined ? String(product.our_price) : '')
   const [currencyCode, setCurrencyCode] = useState(product?.currency_code ?? 'USD')
   const [imageUrl, setImageUrl] = useState(product?.image_url ?? '')
+  const [vatIncluded, setVatIncluded] = useState(product?.vat_included ?? false)
   
   // Data state
   const [stores, setStores] = useState<Store[]>([])
@@ -155,6 +156,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
             currencyCode, 
             ourPrice: ourPrice ? parseFloat(ourPrice) : null,
             imageUrl: imageUrl.trim() || null,
+            vatIncluded,
           }
         : { 
             storeId: selectedStoreId, 
@@ -164,6 +166,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
             shopifyProductId: shopifyProduct?.shopify_product_id ?? null,
             handle: shopifyProduct?.handle ?? null,
             imageUrl: imageUrl.trim() || (shopifyProduct?.image_url ?? null),
+            vatIncluded,
           }
 
       const res = await fetch(endpoint, {
@@ -362,6 +365,17 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
               disabled={inputMethod === 'shopify' && !selectedShopifyProduct}
             />
           </div>
+
+
+          <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={vatIncluded}
+              onChange={e => setVatIncluded(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            VAT included in your price
+          </label>
 
           <div>
             <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
