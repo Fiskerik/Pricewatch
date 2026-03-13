@@ -51,7 +51,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Selected competitor has no existing baseline price yet.' }, { status: 400 })
   }
 
-  await sendPriceAlert({
+  console.log('[mock/send-alert] attempting test alert send', {
+    userId: user.id,
+    competitorId,
+    email,
+    emailProvider: process.env.EMAIL_PROVIDER ?? 'resend',
+    hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
+    emailFrom: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+    oldPrice,
+    newPrice: parsedNewPrice,
+  })
+
+  const sendResult = await sendPriceAlert({
     to: email,
     productTitle: title,
     competitorLabel: (competitor as any)?.label ?? '',
@@ -68,7 +79,16 @@ export async function POST(req: NextRequest) {
     email,
     oldPrice,
     newPrice: parsedNewPrice,
+    sendResult,
   })
 
-  return NextResponse.json({ sent: true })
+  return NextResponse.json({
+    sent: !sendResult.skipped,
+    sendResult,
+    debug: {
+      hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
+      emailFrom: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+      emailProvider: process.env.EMAIL_PROVIDER ?? 'resend',
+    },
+  })
 }
