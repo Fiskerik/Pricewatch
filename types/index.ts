@@ -34,6 +34,15 @@ export interface CompetitorUrl {
   last_price_currency?: string | null
   last_checked_at: string | null
   last_changed_at: string | null
+  match_confidence?: number | null
+  mismatch_reasons?: string[] | null
+  preflight_signals?: {
+    title?: string | null
+    brand?: string | null
+    variant?: string | null
+    size?: string | null
+    source?: string[]
+  } | null
   is_active: boolean
   created_at: string
   price_history?: PriceHistory[]
