@@ -4,7 +4,7 @@ import { scrapeHmProductDirect } from './extractors/hm'
 import { extractMagento, detectMagento } from './extractors/magento'
 import { extractShopify, detectShopify, scrapeShopifyProductJson } from './extractors/shopify'
 import { extractWoocommerce, detectWoocommerce } from './extractors/woocommerce'
-import { dedupeCandidates, ExtractResult, FailureReasonCode, pickCandidate, ScrapePriceOptions, ScrapeResult, ScrapedCandidate } from './shared'
+import { dedupeCandidates, extractStockSignal, ExtractResult, FailureReasonCode, pickCandidate, ScrapePriceOptions, ScrapeResult, ScrapedCandidate } from './shared'
 
 type PlatformName = 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic'
 
@@ -100,6 +100,8 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
   const remainingTimeMs = () => SCRAPE_TOTAL_TIMEOUT_MS - (Date.now() - startedAt)
   const allCandidates: ScrapedCandidate[] = []
   let primaryPlatform: PlatformName | 'unknown' = 'unknown'
+  let stockStatus: ScrapeResult['stockStatus'] = 'unknown'
+  let stockSource: string | null = null
 
   if (url.includes('hm.com')) {
     const hmDirect = await scrapeHmProductDirect(url, options)
@@ -113,6 +115,10 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
 
   try {
     const html = await renderJs(url, remainingTimeMs)
+    const stockSignal = await extractStockSignal(html)
+    stockStatus = stockSignal.status
+    stockSource = stockSignal.source
+
     const extractorChain = detectPlatform(url, html)
     primaryPlatform = extractorChain.find(name => name !== 'generic') ?? 'generic'
     console.log('[scraper] extractor chain', { url, extractorChain })
@@ -135,6 +141,8 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
         candidates: [],
         metricUsed: null,
         matchedPreferredMetric: false,
+        stockStatus,
+        stockSource,
         error: errorText,
         failureCode: classifyFailure(errorText),
         platform: primaryPlatform,
@@ -151,6 +159,8 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
       candidates: [],
       metricUsed: null,
       matchedPreferredMetric: false,
+      stockStatus,
+      stockSource,
       error: 'Price not found',
       failureCode: 'no_candidate',
       platform: primaryPlatform,
@@ -164,6 +174,8 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
     metricUsed: picked.metricUsed,
     matchedPreferred: picked.matchedPreferredMetric,
     totalCandidates: deduped.length,
+    stockStatus,
+    stockSource,
   })
 
   return {
@@ -174,6 +186,8 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
     method: deduped.some(c => c.source.startsWith('Shopify')) ? 'direct' : 'js-render',
     metricUsed: picked.metricUsed,
     platform: primaryPlatform,
+    stockStatus,
+    stockSource,
   }
 }
 

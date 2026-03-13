@@ -37,10 +37,131 @@ export interface ScrapeResult {
   error?: string
   failureCode?: FailureReasonCode
   platform?: 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic' | 'unknown'
+  stockStatus: 'in_stock' | 'out_of_stock' | 'unknown'
+  stockSource: string | null
 }
 
 export interface ScrapePriceOptions {
   preferredMetric?: string | null
+}
+
+export interface StockSignalResult {
+  status: 'in_stock' | 'out_of_stock' | 'unknown'
+  source: string | null
+}
+
+const IN_STOCK_AVAILABILITY_TOKENS = [
+  'instock',
+  'in_stock',
+  'limitedavailability',
+  'preorder',
+  'pre-order',
+  'backorder',
+]
+
+const OOS_AVAILABILITY_TOKENS = [
+  'outofstock',
+  'out_of_stock',
+  'soldout',
+  'sold_out',
+  'discontinued',
+  'unavailable',
+]
+
+const STOCK_TEXT_PATTERNS: Array<{ status: 'in_stock' | 'out_of_stock'; pattern: RegExp }> = [
+  { status: 'out_of_stock', pattern: /\b(out\s*of\s*stock|sold\s*out|currently\s+unavailable|not\s+available|temporarily\s+out\s+of\s+stock)\b/i },
+  { status: 'in_stock', pattern: /\b(in\s*stock|available\s+now|ready\s+to\s+ship|ships?\s+today|lagerstatus\s*:\s*i\s*lager|i\s*lager|finns\s*i\s*lager)\b/i },
+]
+
+function normalizeAvailability(raw: string): 'in_stock' | 'out_of_stock' | null {
+  const normalized = raw.toLowerCase().replace(/[^a-z_]/g, '')
+  if (IN_STOCK_AVAILABILITY_TOKENS.some(token => normalized.includes(token))) return 'in_stock'
+  if (OOS_AVAILABILITY_TOKENS.some(token => normalized.includes(token))) return 'out_of_stock'
+  return null
+}
+
+export async function extractStockSignal(html: string): Promise<StockSignalResult> {
+  const jsonLdRe = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
+  let m: RegExpExecArray | null
+
+  const checkObjectForAvailability = (node: any): 'in_stock' | 'out_of_stock' | null => {
+    if (!node || typeof node !== 'object') return null
+
+    const availability = typeof node.availability === 'string' ? normalizeAvailability(node.availability) : null
+    if (availability) return availability
+
+    const offers = node.offers
+    if (Array.isArray(offers)) {
+      for (const offer of offers) {
+        const status = checkObjectForAvailability(offer)
+        if (status) return status
+      }
+    } else if (offers && typeof offers === 'object') {
+      const status = checkObjectForAvailability(offers)
+      if (status) return status
+    }
+
+    if (Array.isArray(node['@graph'])) {
+      for (const entry of node['@graph']) {
+        const status = checkObjectForAvailability(entry)
+        if (status) return status
+      }
+    }
+
+    return null
+  }
+
+  while ((m = jsonLdRe.exec(html)) !== null) {
+    try {
+      const parsed = JSON.parse(m[1].trim())
+      const entries = Array.isArray(parsed) ? parsed : [parsed]
+      for (const entry of entries) {
+        const status = checkObjectForAvailability(entry)
+        if (status) return { status, source: 'json_ld.availability' }
+      }
+    } catch {
+      // ignore malformed JSON-LD
+    }
+  }
+
+  const metaPatterns = [
+    /<meta[^>]+(?:property|name)="product:availability"[^>]+content="([^"]+)"/i,
+    /<meta[^>]+(?:property|name)="availability"[^>]+content="([^"]+)"/i,
+    /<meta[^>]+(?:property|name)="og:availability"[^>]+content="([^"]+)"/i,
+  ]
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern)
+    if (!match) continue
+    const normalized = normalizeAvailability(match[1])
+    if (normalized) return { status: normalized, source: 'meta.availability' }
+  }
+
+  try {
+    const { load } = await import('cheerio')
+    const $ = load(html)
+    const stockScopeText = [
+      '[data-testid*="stock"]',
+      '[class*="stock"]',
+      '[id*="stock"]',
+      '[class*="availability"]',
+      '[id*="availability"]',
+      'body',
+    ]
+      .map(selector => $(selector).slice(0, selector === 'body' ? 1 : 5).text())
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    for (const rule of STOCK_TEXT_PATTERNS) {
+      if (rule.pattern.test(stockScopeText)) {
+        return { status: rule.status, source: `text_pattern.${rule.status}` }
+      }
+    }
+  } catch {
+    // ignore cheerio parsing errors
+  }
+
+  return { status: 'unknown', source: null }
 }
 
 export function parsePriceText(raw: string): number | null {

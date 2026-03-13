@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { scrapePrice } from '@/lib/scraper'
-import { sendPriceAlert } from '@/lib/email'
+import { sendPriceAlert, sendStockAlert } from '@/lib/email'
 import { FailureReasonCode } from '@/lib/scraper/shared'
 
 const MAX_ENQUEUE_PER_RUN = 500
@@ -127,6 +127,7 @@ export async function GET(req: NextRequest) {
         id, status, attempts, domain, competitor_url_id,
         competitor_urls (
           id, url, label, last_price, last_price_currency, selected_price_metric, mock_next_price, mock_price_enabled,
+          last_stock_status,
           products (
             id, title, our_price, currency_code,
             stores (
@@ -191,6 +192,8 @@ export async function GET(req: NextRequest) {
               candidates: [],
               metricUsed: 'mock_override',
               matchedPreferredMetric: true,
+              stockStatus: comp.last_stock_status ?? 'unknown',
+              stockSource: 'mock_override',
             }
           : await scrapePrice(comp.url, product?.currency_code ?? 'USD', {
               preferredMetric: comp.selected_price_metric ?? null,
@@ -246,6 +249,41 @@ export async function GET(req: NextRequest) {
         })
 
         const oldPrice = comp.last_price ? parseFloat(String(comp.last_price)) : null
+        const oldStockStatus = typeof comp.last_stock_status === 'string' ? comp.last_stock_status : 'unknown'
+        const newStockStatus = scrapeResult.stockStatus
+
+        if (newStockStatus !== 'unknown' && oldStockStatus !== newStockStatus) {
+          await admin
+            .from('competitor_urls')
+            .update({
+              last_stock_status: newStockStatus,
+              last_stock_changed_at: now,
+            })
+            .eq('id', comp.id)
+
+          if (userEmail && product?.title) {
+            try {
+              await sendStockAlert({
+                to: userEmail,
+                productTitle: product.title,
+                competitorLabel: comp.label ?? '',
+                competitorUrl: comp.url,
+                previousStatus: oldStockStatus,
+                newStatus: newStockStatus,
+              })
+
+              await admin.from('alerts_sent').insert({
+                competitor_url_id: comp.id,
+                old_price: oldPrice,
+                new_price: scrapeResult.price,
+                alert_type: newStockStatus === 'out_of_stock' ? 'stock_out' : 'restocked',
+              })
+            } catch (emailErr) {
+              results.errors.push(`Stock email failed for ${comp.id}: ${String(emailErr)}`)
+            }
+          }
+        }
+
         if (oldPrice !== null && Math.abs(scrapeResult.price - oldPrice) > 0.005) {
           results.changed++
 
@@ -286,6 +324,7 @@ export async function GET(req: NextRequest) {
                 competitor_url_id: comp.id,
                 old_price: oldPrice,
                 new_price: scrapeResult.price,
+                alert_type: 'price_change',
               })
             } catch (emailErr) {
               results.errors.push(`Email failed for ${comp.id}: ${String(emailErr)}`)
