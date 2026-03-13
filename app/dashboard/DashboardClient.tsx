@@ -18,6 +18,11 @@ interface ScrapedCandidate {
   currency: string
   confidence?: number
 }
+
+interface DiscoveredCompetitor {
+  url: string
+  label: string
+}
 interface PendingPrice {
   rawPrice: number
   price: number
@@ -60,6 +65,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [draggingProductId, setDraggingProductId] = useState<string | null>(null)
 
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
+  const [discoveringCompetitorIds, setDiscoveringCompetitorIds] = useState<Record<string, boolean>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
   const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
   const [decimalShifts, setDecimalShifts] = useState<Record<string, number>>({})
@@ -356,7 +362,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     }).catch(() => {})
   }
 
-  const handleProductAdded = (product: Product) => { setProducts(prev => [product, ...prev]); setShowAddProduct(false) }
+  const handleProductAdded = (product: Product) => {
+    setProducts(prev => [product, ...prev])
+    setExpandedProducts(prev => ({ ...prev, [product.id]: true }))
+    setShowAddProduct(false)
+  }
 
   const handleProductUpdated = (updated: Product) => {
     setProducts(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p))
@@ -370,6 +380,83 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setAddCompetitorFor(null)
     setExpandedProducts(prev => ({ ...prev, [productId]: true }))
     triggerBackgroundFetch(competitor.id)
+  }
+
+  const handleDiscoverCompetitors = async (product: Product) => {
+    const competitors = product.competitor_urls ?? []
+    if (limits.competitors !== Infinity && competitors.length >= limits.competitors) {
+      return
+    }
+
+    setDiscoveringCompetitorIds(prev => ({ ...prev, [product.id]: true }))
+
+    try {
+      const discoverRes = await fetch('/api/competitors/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: product.id, title: product.title, limit: 3 }),
+      })
+
+      const discoverData = await discoverRes.json()
+      if (!discoverRes.ok) {
+        console.log('[competitors/discover] discover request failed', {
+          productId: product.id,
+          title: product.title,
+          error: discoverData?.error ?? 'Unknown error',
+        })
+        return
+      }
+
+      const candidates: DiscoveredCompetitor[] = Array.isArray(discoverData?.candidates) ? discoverData.candidates : []
+      console.log('[competitors/discover] candidates discovered', {
+        productId: product.id,
+        discoveredCount: candidates.length,
+      })
+
+      let addedCount = 0
+      for (const candidate of candidates) {
+        const currentCompetitorCount = competitors.length + addedCount
+        if (limits.competitors !== Infinity && currentCompetitorCount >= limits.competitors) break
+
+        const addRes = await fetch('/api/competitors/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productId: product.id,
+            url: candidate.url,
+            label: candidate.label ?? null,
+            initialPrice: null,
+            initialCurrency: null,
+          }),
+        })
+
+        const addData = await addRes.json()
+        if (!addRes.ok) {
+          console.log('[competitors/discover] add candidate failed', {
+            productId: product.id,
+            url: candidate.url,
+            error: addData?.error ?? 'Unknown error',
+          })
+          continue
+        }
+
+        if (addData?.competitor) {
+          addedCount += 1
+          handleCompetitorAdded(product.id, addData.competitor)
+        }
+      }
+    } catch (error) {
+      console.log('[competitors/discover] unexpected failure', {
+        productId: product.id,
+        error: String(error),
+      })
+    } finally {
+      setDiscoveringCompetitorIds(prev => {
+        const next = { ...prev }
+        delete next[product.id]
+        return next
+      })
+    }
   }
 
   const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
@@ -667,6 +754,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       onToggle={() => setExpandedProducts(prev => ({ ...prev, [product.id]: !prev[product.id] }))}
                       onEditProduct={() => setEditingProduct(product)}
                       onAddCompetitor={() => setAddCompetitorFor(product.id)}
+                      onFindCompetitors={() => handleDiscoverCompetitors(product)}
+                      discoveringCompetitors={!!discoveringCompetitorIds[product.id]}
                       onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                       onRefreshCompetitor={triggerBackgroundFetch}
                       onCurrencyUpdated={handleProductCurrencyUpdated}

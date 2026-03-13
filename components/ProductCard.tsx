@@ -97,6 +97,8 @@ interface Props {
   onToggle: () => void
   onEditProduct: (product: Product) => void
   onAddCompetitor: () => void
+  onFindCompetitors: () => void
+  discoveringCompetitors?: boolean
   onEditCompetitor: (competitor: CompetitorUrl) => void
   onRefreshCompetitor: (competitorId: string) => void
   onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
@@ -171,7 +173,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 }
 
 export default function ProductCard({
-  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
+  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onFindCompetitors, discoveringCompetitors, onEditCompetitor, onRefreshCompetitor,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
@@ -518,13 +520,22 @@ export default function ProductCard({
             )
           })}
 
-          <button
-            onClick={onAddCompetitor}
-            disabled={atLimit}
-            className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-400 hover:border-gray-400 hover:text-gray-600 active:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {atLimit ? `Competitor limit reached (${competitorLimit})` : '+ Add competitor URL'}
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              onClick={onFindCompetitors}
+              disabled={atLimit || discoveringCompetitors}
+              className="w-full border border-blue-200 bg-blue-50 text-blue-700 rounded-xl py-3 text-sm font-semibold hover:bg-blue-100 active:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {discoveringCompetitors ? 'Finding competitors…' : 'Find competitors'}
+            </button>
+            <button
+              onClick={onAddCompetitor}
+              disabled={atLimit}
+              className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-400 hover:border-gray-400 hover:text-gray-600 active:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {atLimit ? `Competitor limit reached (${competitorLimit})` : '+ Add competitor URL'}
+            </button>
+          </div>
         </div>
       )}
     </div>
