@@ -60,6 +60,26 @@ function isSaleMetric(metric: string | null | undefined): boolean {
   return /sale|discount|redprice|nowprice|currentprice|campaign/i.test(metric)
 }
 
+function isStartingPriceMetric(metric: string | null | undefined): boolean {
+  if (!metric) return false
+  return /lowprice|minprice|startingprice|pricefrom|fromprice|offeraggregate|:from\b/i.test(metric)
+}
+
+function formatCandidatePrice(amount: number, currency: string, metric: string | null | undefined): string {
+  const normalizedCurrency = normalizeCurrencyCode(currency)
+  if (!isStartingPriceMetric(metric)) {
+    return formatMoney(amount, normalizedCurrency)
+  }
+
+  const decimals = normalizedCurrency === 'JPY' ? 0 : 2
+  const value = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  }).format(amount)
+
+  return `${value}+ ${normalizedCurrency}`
+}
+
 function statusBadgeClass(status: PendingPrice['scrapeStatus']) {
   if (status === 'matched') return 'bg-green-100 text-green-700 border-green-200'
   if (status === 'fallback') return 'bg-amber-100 text-amber-700 border-amber-200'
@@ -261,9 +281,7 @@ export default function ProductCard({
             const historyPoints = comp.price_history ?? []
             const showHistory = !!expandedHistory[comp.id]
             const compCurrency = normalizeCurrencyCode(comp.last_price_currency || productCurrency)
-            const matchConfidence = typeof comp.match_confidence === 'number' ? comp.match_confidence : null
-            const mismatchReasons = Array.isArray(comp.mismatch_reasons) ? comp.mismatch_reasons : []
-            const showMismatchWarning = matchConfidence !== null && (matchConfidence < 0.45 || mismatchReasons.length > 0)
+            const activeMetric = pending?.metricUsed ?? pending?.selectedMetric ?? comp.selected_price_metric
 
             let hostname = comp.url
             try { hostname = new URL(comp.url).hostname } catch { /* keep raw */ }
@@ -294,12 +312,6 @@ export default function ProductCard({
                               Fallback used: preferred metric {comp.selected_price_metric}
                             </span>
                           )}
-                        </div>
-                      )}
-                      {showMismatchWarning && (
-                        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
-                          <div className="font-semibold">Potential product mismatch ({Math.round((matchConfidence ?? 0) * 100)}% confidence)</div>
-                          {mismatchReasons.length > 0 && <div className="mt-0.5">{mismatchReasons[0]}</div>}
                         </div>
                       )}
                     </div>
@@ -353,7 +365,7 @@ export default function ProductCard({
                           </div>
                         )}
                         <div className={`text-base font-extrabold tabular-nums ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
-                          {formatMoney(priceWithVat, compCurrency)}
+                          {formatCandidatePrice(priceWithVat, compCurrency, activeMetric)}
                         </div>
                         <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
                           {cheaper ? 'CHEAPER' : 'HIGHER'}
@@ -394,7 +406,7 @@ export default function ProductCard({
                           already includes VAT — it must not change this number.
                         */}
                         <div className="text-lg font-extrabold text-gray-900">
-                          {formatMoney(pending.price, normalizeCurrencyCode(pending.currency))}
+                          {formatCandidatePrice(pending.price, pending.currency, pending.metricUsed ?? pending.selectedMetric)}
                           {vatRate > 0 && (
                             <span className="text-xs font-normal text-gray-400 ml-1">
                               {pending.includesVat ? 'includes VAT' : 'excludes VAT'}
