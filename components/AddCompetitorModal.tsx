@@ -29,6 +29,7 @@ interface DebugCandidate {
   source: string
   currency: string
   price: number
+  confidence?: number
 }
 
 export default function AddCompetitorModal({
@@ -100,11 +101,21 @@ export default function AddCompetitorModal({
         matchedPreferredMetric: Boolean(data?.matchedPreferredMetric),
         candidateCount: candidates.length,
       })
+      if (candidates.length === 0) {
+        console.log('[competitor/edit] no candidate metrics returned from test scrape', {
+          competitorId: competitor.id,
+          preferredMetric: trackingMetric,
+        })
+      }
       setDebugData({
         metricUsed: typeof data?.metricUsed === 'string' ? data.metricUsed : null,
         matchedPreferredMetric: Boolean(data?.matchedPreferredMetric),
         candidates,
       })
+
+      if ((!trackingMetric || !trackingMetric.trim()) && candidates.length > 0) {
+        setTrackingMetric(candidates[0].metric)
+      }
     } catch {
       setSaveError('Failed to test scrape.')
     } finally {
@@ -272,13 +283,39 @@ export default function AddCompetitorModal({
                         )}
                       </div>
                       <div className="space-y-1">
-                        {debugData.candidates.slice(0, 3).map((candidate, idx) => (
-                          <div key={`${candidate.metric}-${idx}`} className="rounded-md border border-gray-200 px-2 py-1.5">
-                            <div className="font-medium text-gray-800">#{idx + 1} {candidate.metric}</div>
-                            <div className="text-gray-600">source: {candidate.source}</div>
-                            <div className="text-gray-600">detected currency: {candidate.currency}</div>
+                        {debugData.candidates.length === 0 && (
+                          <div className="text-gray-500">
+                            No candidates were found in this scrape. Try another URL or adjust the metric manually.
                           </div>
-                        ))}
+                        )}
+                        {debugData.candidates.slice(0, 5).map((candidate, idx) => {
+                          const checked = trackingMetric === candidate.metric
+                          return (
+                            <label
+                              key={`${candidate.metric}-${idx}`}
+                              className="flex items-start justify-between gap-2 rounded-md border border-gray-200 px-2 py-1.5 cursor-pointer"
+                            >
+                              <span className="inline-flex items-start gap-2">
+                                <input
+                                  type="radio"
+                                  name="debug-metric"
+                                  checked={checked}
+                                  onChange={() => setTrackingMetric(candidate.metric)}
+                                  className="mt-0.5"
+                                />
+                                <span>
+                                  <div className="font-medium text-gray-800">#{idx + 1} {candidate.metric}</div>
+                                  <div className="text-gray-600">price: {candidate.price}</div>
+                                  <div className="text-gray-600">source: {candidate.source}</div>
+                                  <div className="text-gray-600">detected currency: {candidate.currency}</div>
+                                </span>
+                              </span>
+                              {debugData.metricUsed === candidate.metric && (
+                                <span className="text-[10px] font-semibold text-green-700">used</span>
+                              )}
+                            </label>
+                          )
+                        })}
                       </div>
                     </>
                   )}
@@ -351,6 +388,10 @@ export default function AddCompetitorModal({
               {saving ? 'Saving...' : mode === 'edit' ? 'Save Changes' : (preflightWarning ? 'Confirm & Start Watching' : 'Start Watching')}
             </button>
           </div>
+
+          <p className="text-[11px] text-gray-500 pt-1">
+            If the fetched price is missing or incorrect, please email support: eaconsulting.supp@gmail.com
+          </p>
         </form>
       </div>
     </div>

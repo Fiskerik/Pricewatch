@@ -193,16 +193,29 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         if (!res.ok) return
         const data = await res.json()
         const comp = data.competitor
-        if (comp?.last_price != null) {
+        const candidates = Array.isArray(data?.candidates) ? data.candidates as ScrapedCandidate[] : []
+        const rankedCandidates = [...candidates].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+        const candidateFallback = rankedCandidates[0] ?? null
+
+        if (comp?.last_price != null || candidateFallback) {
+          const rawPrice = comp?.last_price != null ? comp.last_price : candidateFallback?.price
+          if (rawPrice == null) return
           const savedDecimalShift = decimalShifts[competitorId] ?? 0
-          const shiftedPrice = applyDecimalShift(comp.last_price, savedDecimalShift)
-          console.log('[fetch] pending price prepared', { competitorId, rawPrice: comp.last_price, savedDecimalShift, shiftedPrice })
-          const candidates = Array.isArray(data?.candidates) ? data.candidates as ScrapedCandidate[] : []
+          const shiftedPrice = applyDecimalShift(rawPrice, savedDecimalShift)
+          console.log('[fetch] pending price prepared', {
+            competitorId,
+            rawPrice,
+            fromFallbackCandidate: comp?.last_price == null,
+            savedDecimalShift,
+            shiftedPrice,
+            candidateCount: candidates.length,
+          })
+
           const selectedMetric =
             (typeof data?.metricUsed === 'string' && data.metricUsed)
             || preferredMetrics[competitorId]
             || comp?.selected_price_metric
-            || candidates[0]?.metric
+            || candidateFallback?.metric
             || null
 
           const hasSavedMetric = Boolean(comp?.selected_price_metric || preferredMetrics[competitorId])
@@ -215,9 +228,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           setPendingPrices(prev => ({
             ...prev,
             [competitorId]: {
-              rawPrice: comp.last_price,
+              rawPrice,
               price: shiftedPrice,
-              currency: comp.last_price_currency ?? 'USD',
+              currency: comp?.last_price_currency ?? candidateFallback?.currency ?? 'USD',
               includesVat: true,
               candidates,
               selectedMetric,
@@ -227,6 +240,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               scrapeStatus,
             },
           }))
+        }
+
+        if (comp) {
           setProducts(prev => prev.map(p => ({
             ...p,
             competitor_urls: (p.competitor_urls ?? []).map(c => c.id === competitorId ? { ...c, ...comp } : c),
