@@ -7,7 +7,7 @@ create table if not exists public.scrape_jobs (
   failure_reason_code text check (failure_reason_code in ('timeout', 'blocked', 'parse_fail', 'no_candidate')),
   domain text not null,
   platform text,
-  competitor_url_id uuid not null references public.competitor_urls(id) on delete cascade,
+  competitor_url_id uuid not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -20,6 +20,27 @@ create index if not exists scrape_jobs_domain_platform_idx
 
 create index if not exists scrape_jobs_competitor_url_idx
   on public.scrape_jobs (competitor_url_id);
+
+do $$
+begin
+  if to_regclass('public.competitor_urls') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'scrape_jobs_competitor_url_id_fkey'
+        and conrelid = 'public.scrape_jobs'::regclass
+    ) then
+      alter table public.scrape_jobs
+        add constraint scrape_jobs_competitor_url_id_fkey
+        foreign key (competitor_url_id)
+        references public.competitor_urls(id)
+        on delete cascade;
+    end if;
+  else
+    raise notice 'public.competitor_urls does not exist yet; run base schema first, then add FK scrape_jobs_competitor_url_id_fkey.';
+  end if;
+end;
+$$;
 
 create or replace function public.set_scrape_jobs_updated_at()
 returns trigger
