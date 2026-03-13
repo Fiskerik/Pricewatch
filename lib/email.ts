@@ -32,7 +32,9 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
 
   const dropped = newPrice < oldPrice
   const diff = Math.abs(newPrice - oldPrice)
-  const pct = Math.abs(((newPrice - oldPrice) / oldPrice) * 100).toFixed(1)
+  const pct = oldPrice === 0
+    ? 'N/A'
+    : Math.abs(((newPrice - oldPrice) / oldPrice) * 100).toFixed(1)
   const accent = dropped ? '#16a34a' : '#dc2626'
   const bg = dropped ? '#f0fdf4' : '#fef2f2'
   const border = dropped ? '#86efac' : '#fca5a5'
@@ -66,7 +68,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
       </tr>
     </table>
     <div style="background:#f9f9fb;border-radius:8px;padding:12px 16px;font-size:13px;color:#52525b;margin-bottom:24px">
-      ${dropped ? '↓' : '↑'} <strong>${fmtPrice(diff, currency)} (${pct}%)</strong> ${dropped ? 'cheaper' : 'more expensive'} than before
+      ${dropped ? '↓' : '↑'} <strong>${fmtPrice(diff, currency)}${pct === 'N/A' ? '' : ` (${pct}%)`}</strong> ${dropped ? 'cheaper' : 'more expensive'} than before
       ${ourPrice ? ` &nbsp;&middot;&nbsp; Your price: <strong>${fmtPrice(ourPrice, currency)}</strong>` : ''}
     </div>
     <a href="${competitorUrl}" style="display:block;background:#111;color:#fff;text-align:center;padding:14px 20px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px">
