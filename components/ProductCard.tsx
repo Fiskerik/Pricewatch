@@ -4,7 +4,13 @@ import { Product, CompetitorUrl, PriceHistory } from '@/types'
 import { formatMoney, SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/currency'
 import { applyVat, removeVat } from '@/lib/vat'
 
-interface ScrapedCandidate { metric: string; source: string; price: number; currency: string }
+interface ScrapedCandidate {
+  metric: string
+  source: string
+  price: number
+  currency: string
+  confidence?: number
+}
 interface PendingPrice {
   rawPrice: number
   price: number
@@ -13,10 +19,14 @@ interface PendingPrice {
   candidates: ScrapedCandidate[]
   selectedMetric: string | null
   decimalShift: number
+  metricUsed: string | null
+  matchedPreferredMetric: boolean
+  scrapeStatus: 'matched' | 'fallback' | 'needs_review'
 }
 
 interface GroupedCandidate extends ScrapedCandidate {
   metrics: string[]
+  confidenceScore?: number
 }
 
 function groupCandidatesByValue(candidates: ScrapedCandidate[]): GroupedCandidate[] {
@@ -39,12 +49,21 @@ function groupCandidatesByValue(candidates: ScrapedCandidate[]): GroupedCandidat
     })
   }
 
-  return Array.from(grouped.values())
+  return Array.from(grouped.values()).map((candidate) => {
+    const confidenceScore = Math.min(0.99, 0.45 + (candidate.metrics.length * 0.15))
+    return { ...candidate, confidenceScore }
+  })
 }
 
 function isSaleMetric(metric: string | null | undefined): boolean {
   if (!metric) return false
   return /sale|discount|redprice|nowprice|currentprice|campaign/i.test(metric)
+}
+
+function statusBadgeClass(status: PendingPrice['scrapeStatus']) {
+  if (status === 'matched') return 'bg-green-100 text-green-700 border-green-200'
+  if (status === 'fallback') return 'bg-amber-100 text-amber-700 border-amber-200'
+  return 'bg-red-100 text-red-700 border-red-200'
 }
 
 interface ConvertedCurrencyResponse {
@@ -223,6 +242,9 @@ export default function ProductCard({
             const isFetching = !!fetchingIds[comp.id]
             const pending = pendingPrices[comp.id]
             const groupedCandidates = pending ? groupCandidatesByValue(pending.candidates) : []
+            const topCandidates = groupedCandidates
+              .sort((a, b) => (b.confidenceScore ?? 0) - (a.confidenceScore ?? 0))
+              .slice(0, 3)
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
             const includesVat = competitorVatIncluded[comp.id] ?? comp.vat_included ?? true
             const saleActive = isSaleMetric(pending?.selectedMetric ?? comp.selected_price_metric)
@@ -256,6 +278,18 @@ export default function ProductCard({
                           ? `Checked ${new Date(comp.last_checked_at).toLocaleString()}`
                           : 'Never checked'}
                       </div>
+                      {pending && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusBadgeClass(pending.scrapeStatus)}`}>
+                            {pending.scrapeStatus}
+                          </span>
+                          {pending.scrapeStatus === 'fallback' && comp.selected_price_metric && (
+                            <span className="text-[10px] text-amber-700">
+                              Fallback used: preferred metric {comp.selected_price_metric}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {showMismatchWarning && (
                         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
                           <div className="font-semibold">Potential product mismatch ({Math.round((matchConfidence ?? 0) * 100)}% confidence)</div>
@@ -403,29 +437,37 @@ export default function ProductCard({
                           </div>
                         </div>
 
-                        {groupedCandidates.length > 1 && (
+                        {topCandidates.length > 0 && (
                           <div className="mt-3 space-y-1.5">
                             <div className="text-[11px] font-semibold text-amber-800">
-                              Multiple prices were found — choose the value to track from now on:
+                              Top candidates (pick one tracking metric and it stays locked for future checks):
                             </div>
                             <div className="space-y-1">
-                              {groupedCandidates.map((candidate) => (
+                              {topCandidates.map((candidate, idx) => (
                                 <label
                                   key={candidate.metric}
                                   className="flex items-center justify-between gap-3 text-xs rounded-lg border border-amber-200/80 px-2.5 py-1.5 bg-white/70 cursor-pointer"
                                 >
-                                  <span className="inline-flex items-center gap-2">
+                                  <span className="inline-flex items-start gap-2">
                                     <input
                                       type="radio"
                                       name={`metric-${comp.id}`}
                                       checked={pending.selectedMetric ? candidate.metrics.includes(pending.selectedMetric) : false}
                                       onChange={() => onPendingMetricChange(comp.id, candidate.metric)}
                                     />
-                                    <span className="font-medium text-gray-800">
-                                      {formatMoney(candidate.price, normalizeCurrencyCode(candidate.currency))}
+                                    <span>
+                                      <span className="font-medium text-gray-800 block">
+                                        #{idx + 1} {formatMoney(candidate.price, normalizeCurrencyCode(candidate.currency))}
+                                      </span>
+                                      <span className="text-[10px] text-gray-600 block">Source: {candidate.source}</span>
+                                      <span className="text-[10px] text-gray-600 block">Metric path: {candidate.metric}</span>
+                                      <span className="text-[10px] text-gray-600 block">Detected currency: {candidate.currency}</span>
+                                      <span className="text-[10px] text-gray-600 block">Confidence: {((candidate.confidenceScore ?? 0) * 100).toFixed(0)}%</span>
                                     </span>
                                   </span>
-                                  <span className="text-[10px] text-gray-500">{candidate.source}</span>
+                                  {pending.metricUsed === candidate.metric && (
+                                    <span className="text-[10px] font-semibold text-green-700">used</span>
+                                  )}
                                 </label>
                               ))}
                             </div>
