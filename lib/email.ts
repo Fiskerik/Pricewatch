@@ -82,19 +82,21 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
 </div>
 </body></html>`
 
-  const apiKey = process.env.RESEND_API_KEY
+  const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
   const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
 
   console.log('[email] preparing send', {
     provider: 'resend',
     hasApiKey: Boolean(apiKey),
+    hasResendKey: Boolean(process.env.RESEND_KEY),
+    hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
     to,
     from,
     subject,
   })
 
   if (!apiKey) {
-    console.warn('[email] RESEND_API_KEY not set — skipping alert', {
+    console.warn('[email] RESEND_KEY/RESEND_API_KEY not set — skipping alert', {
       provider: 'resend',
       to,
       from,

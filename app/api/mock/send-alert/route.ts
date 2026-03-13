@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
     competitorId,
     email,
     emailProvider: process.env.EMAIL_PROVIDER ?? 'resend',
+    hasResendKey: Boolean(process.env.RESEND_KEY),
     hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
     emailFrom: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
     oldPrice,
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
     sent: !sendResult.skipped,
     sendResult,
     debug: {
+      hasResendKey: Boolean(process.env.RESEND_KEY),
       hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
       emailFrom: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
       emailProvider: process.env.EMAIL_PROVIDER ?? 'resend',
