@@ -233,6 +233,9 @@ export default function ProductCard({
             const historyPoints = comp.price_history ?? []
             const showHistory = !!expandedHistory[comp.id]
             const compCurrency = normalizeCurrencyCode(comp.last_price_currency || productCurrency)
+            const matchConfidence = typeof comp.match_confidence === 'number' ? comp.match_confidence : null
+            const mismatchReasons = Array.isArray(comp.mismatch_reasons) ? comp.mismatch_reasons : []
+            const showMismatchWarning = matchConfidence !== null && (matchConfidence < 0.45 || mismatchReasons.length > 0)
 
             let hostname = comp.url
             try { hostname = new URL(comp.url).hostname } catch { /* keep raw */ }
@@ -253,6 +256,12 @@ export default function ProductCard({
                           ? `Checked ${new Date(comp.last_checked_at).toLocaleString()}`
                           : 'Never checked'}
                       </div>
+                      {showMismatchWarning && (
+                        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                          <div className="font-semibold">Potential product mismatch ({Math.round((matchConfidence ?? 0) * 100)}% confidence)</div>
+                          {mismatchReasons.length > 0 && <div className="mt-0.5">{mismatchReasons[0]}</div>}
+                        </div>
+                      )}
                     </div>
 
                     {/* History toggle */}

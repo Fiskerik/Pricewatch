@@ -228,7 +228,19 @@ export async function GET(req: NextRequest) {
             })
             .eq('id', comp.id)
 
-          if (userEmail && product?.title) {
+          const confidence = typeof comp.match_confidence === 'number' ? comp.match_confidence : 1
+          const mismatchReasons = Array.isArray(comp.mismatch_reasons) ? comp.mismatch_reasons : []
+          const suppressAlert = confidence < 0.45 || mismatchReasons.length > 0
+
+          if (suppressAlert) {
+            console.log('[cron] alert suppressed due to potential mismatch', {
+              competitorId: comp.id,
+              confidence,
+              mismatchReasons,
+            })
+          }
+
+          if (!suppressAlert && userEmail && product?.title) {
             try {
               await sendPriceAlert({
                 to: userEmail,

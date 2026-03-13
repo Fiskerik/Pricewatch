@@ -3,6 +3,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase'
 import { cleanUrl } from '@/lib/scraper'
+import { evaluateCompetitorMatch, LOW_CONFIDENCE_THRESHOLD, runCompetitorPreflight } from '@/lib/competitorMatch'
 
 function normalizeCompetitorUrl(rawUrl: string): string {
   const parsed = new URL(rawUrl.trim())
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { productId, url, label, initialPrice, initialCurrency } = await req.json()
+  const { productId, url, label, initialPrice, initialCurrency, overrideLowConfidence } = await req.json()
   if (!productId || !url) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   let normalizedUrl = ''
@@ -30,12 +31,54 @@ export async function POST(req: NextRequest) {
 
   const { data: product } = await supabase
     .from('products')
-    .select('id, stores!inner(user_id)')
+    .select('*, stores!inner(user_id)')
     .eq('id', productId)
     .eq('stores.user_id', user.id)
     .single()
 
   if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+
+  let preflightSignals = null as any
+  let matchConfidence = 0
+  let mismatchReasons: string[] = []
+
+  try {
+    preflightSignals = await runCompetitorPreflight(normalizedUrl)
+    const productMeta = {
+      title: (product as any)?.title ?? null,
+      handle: (product as any)?.handle ?? null,
+      variant: (product as any)?.variant_title ?? null,
+      brand: (product as any)?.brand ?? (product as any)?.vendor ?? null,
+      size: (product as any)?.size ?? null,
+    }
+    const evaluation = evaluateCompetitorMatch(productMeta, preflightSignals)
+    matchConfidence = evaluation.confidence
+    mismatchReasons = evaluation.reasons
+    console.log('[competitors/add] preflight result', {
+      productId,
+      normalizedUrl,
+      confidence: matchConfidence,
+      mismatchReasons,
+      matchedSignals: evaluation.matchedSignals,
+      overrideLowConfidence: Boolean(overrideLowConfidence),
+    })
+  } catch (err) {
+    mismatchReasons = ['Unable to verify product signals from the competitor page during preflight scrape.']
+    matchConfidence = 0.2
+    console.log('[competitors/add] preflight failed', { productId, normalizedUrl, error: String(err) })
+  }
+
+  if (matchConfidence < LOW_CONFIDENCE_THRESHOLD && !overrideLowConfidence) {
+    return NextResponse.json({
+      error: 'Low confidence match. Please verify this is the same product before saving.',
+      requiresOverride: true,
+      preflight: {
+        confidence: matchConfidence,
+        mismatchReasons,
+        extractedSignals: preflightSignals,
+      },
+    }, { status: 409 })
+  }
 
   const { data: competitor, error } = await admin
     .from('competitor_urls')
@@ -46,6 +89,9 @@ export async function POST(req: NextRequest) {
       last_price: initialPrice ?? null,
       last_price_currency: initialCurrency ? String(initialCurrency).toUpperCase() : null,
       last_checked_at: initialPrice ? new Date().toISOString() : null,
+      match_confidence: matchConfidence,
+      mismatch_reasons: mismatchReasons,
+      preflight_signals: preflightSignals,
     })
     .select()
     .single()
