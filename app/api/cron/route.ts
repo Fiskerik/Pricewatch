@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
       .select(`
         id, status, attempts, domain, competitor_url_id,
         competitor_urls (
-          id, url, label, last_price, last_price_currency, selected_price_metric,
+          id, url, label, last_price, last_price_currency, selected_price_metric, mock_next_price, mock_price_enabled,
           products (
             id, title, our_price, currency_code,
             stores (
@@ -178,13 +178,43 @@ export async function GET(req: NextRequest) {
       }
 
       try {
-        const scrapeResult = await scrapePrice(comp.url, product?.currency_code ?? 'USD', {
-          preferredMetric: comp.selected_price_metric ?? null,
-        })
+        const mockPrice = Number(comp.mock_next_price)
+        const hasMockPrice = comp.mock_price_enabled === true && Number.isFinite(mockPrice) && mockPrice > 0
+        const scrapeResult = hasMockPrice
+          ? {
+              price: mockPrice,
+              scrapedCurrency: comp.last_price_currency ?? product?.currency_code ?? 'USD',
+              method: 'mock_override',
+              error: null,
+              platform: 'mock',
+              failureCode: null,
+              candidates: [],
+              metricUsed: 'mock_override',
+              matchedPreferredMetric: true,
+            }
+          : await scrapePrice(comp.url, product?.currency_code ?? 'USD', {
+              preferredMetric: comp.selected_price_metric ?? null,
+            })
+
+        if (hasMockPrice) {
+          console.log('[cron] using mock override price', {
+            competitorId: comp.id,
+            mockPrice,
+          })
+        }
 
         await admin
           .from('competitor_urls')
-          .update({ last_checked_at: now })
+          .update({
+            last_checked_at: now,
+            ...(hasMockPrice
+              ? {
+                  mock_next_price: null,
+                  mock_price_enabled: false,
+                  mock_set_at: null,
+                }
+              : {}),
+          })
           .eq('id', comp.id)
 
         if (scrapeResult.price === null) {
