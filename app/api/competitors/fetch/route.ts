@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     competitor: updated,
+    scrapedPrice: result.price,
+    scrapedCurrency: result.scrapedCurrency,
     scrapeMethod: result.method,
     scrapeError: result.error ?? null,
     candidates: result.candidates,

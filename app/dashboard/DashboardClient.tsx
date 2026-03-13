@@ -197,8 +197,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         const rankedCandidates = [...candidates].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
         const candidateFallback = rankedCandidates[0] ?? null
 
-        if (comp?.last_price != null || candidateFallback) {
-          const rawPrice = comp?.last_price != null ? comp.last_price : candidateFallback?.price
+        const scrapedPrice = typeof data?.scrapedPrice === 'number' ? data.scrapedPrice : null
+        const scrapedCurrency = typeof data?.scrapedCurrency === 'string' ? data.scrapedCurrency : null
+
+        if (scrapedPrice != null || candidateFallback) {
+          const rawPrice = scrapedPrice ?? candidateFallback?.price
           if (rawPrice == null) return
           const savedDecimalShift = decimalShifts[competitorId] ?? 0
           const shiftedPrice = applyDecimalShift(rawPrice, savedDecimalShift)
@@ -230,7 +233,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             [competitorId]: {
               rawPrice,
               price: shiftedPrice,
-              currency: comp?.last_price_currency ?? candidateFallback?.currency ?? 'USD',
+              currency: scrapedCurrency ?? candidateFallback?.currency ?? comp?.last_price_currency ?? 'USD',
               includesVat: true,
               candidates,
               selectedMetric,

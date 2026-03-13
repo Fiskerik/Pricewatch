@@ -8,7 +8,14 @@ import { dedupeCandidates, ExtractResult, FailureReasonCode, pickCandidate, Scra
 
 type PlatformName = 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic'
 
-async function renderWithScraperApi(url: string): Promise<string> {
+const SCRAPE_TOTAL_TIMEOUT_MS = 60_000
+
+function timeoutSignal(timeoutMs: number): AbortSignal {
+  const safeTimeout = Math.max(1_000, Math.trunc(timeoutMs))
+  return AbortSignal.timeout(safeTimeout)
+}
+
+async function renderWithScraperApi(url: string, timeoutMs: number): Promise<string> {
   const key = process.env.SCRAPER_API_KEY
   if (!key) throw new Error('SCRAPER_API_KEY missing')
   const apiUrl = new URL('http://api.scraperapi.com')
@@ -21,23 +28,24 @@ async function renderWithScraperApi(url: string): Promise<string> {
   if (url.includes('kaufland.de')) apiUrl.searchParams.set('wait_for_selector', '[itemprop="price"],meta[property="product:price:amount"],[data-testid*="price"],[class*="price"]')
   if (url.includes('swappie.com')) apiUrl.searchParams.set('wait_for_selector', '[data-test*="price"],[data-testid*="price"],[itemprop="price"],[class*="price"]')
 
-  const res = await fetch(apiUrl.toString(), { signal: AbortSignal.timeout(60_000) })
+  const res = await fetch(apiUrl.toString(), { signal: timeoutSignal(timeoutMs) })
   return res.text()
 }
 
-async function renderWithBrowserless(url: string): Promise<string> {
+async function renderWithBrowserless(url: string, timeoutMs: number): Promise<string> {
   const key = process.env.BROWSERLESS_API_KEY
   if (!key) throw new Error('BROWSERLESS_API_KEY missing')
   const body = JSON.stringify({
     url,
     waitFor: 8000,
-    gotoOptions: { waitUntil: 'networkidle0', timeout: 40000 },
+    gotoOptions: { waitUntil: 'networkidle0', timeout: Math.max(10_000, Math.min(35_000, Math.trunc(timeoutMs - 3_000))) },
     setExtraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
   })
   const res = await fetch(`https://production-sfo.browserless.io/content?token=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,
+    signal: timeoutSignal(timeoutMs),
   })
   return res.text()
 }
@@ -49,7 +57,7 @@ function classifyFailure(errorMessage: string): FailureReasonCode {
   return 'parse_fail'
 }
 
-async function renderJs(url: string): Promise<string> {
+async function renderJs(url: string, remainingTimeMs: () => number): Promise<string> {
   const providers = [
     { name: 'ScraperAPI', fn: renderWithScraperApi, key: process.env.SCRAPER_API_KEY },
     { name: 'Browserless', fn: renderWithBrowserless, key: process.env.BROWSERLESS_API_KEY },
@@ -57,7 +65,9 @@ async function renderJs(url: string): Promise<string> {
   const configured = providers.filter(p => p.key)
   for (const provider of configured) {
     try {
-      return await provider.fn(url)
+      const timeLeft = remainingTimeMs()
+      if (timeLeft < 5_000) throw new Error('Scrape timeout budget exhausted before renderer execution')
+      return await provider.fn(url, Math.min(timeLeft, 45_000))
     } catch {
       console.warn(`[scraper] ${provider.name} failed for ${url}`)
     }
@@ -86,6 +96,8 @@ async function runExtractor(name: PlatformName, html: string, url: string, optio
 }
 
 export async function scrapePrice(url: string, _targetCurrency?: string, options?: ScrapePriceOptions): Promise<ScrapeResult> {
+  const startedAt = Date.now()
+  const remainingTimeMs = () => SCRAPE_TOTAL_TIMEOUT_MS - (Date.now() - startedAt)
   const allCandidates: ScrapedCandidate[] = []
   let primaryPlatform: PlatformName | 'unknown' = 'unknown'
 
@@ -100,7 +112,7 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
   }
 
   try {
-    const html = await renderJs(url)
+    const html = await renderJs(url, remainingTimeMs)
     const extractorChain = detectPlatform(url, html)
     primaryPlatform = extractorChain.find(name => name !== 'generic') ?? 'generic'
     console.log('[scraper] extractor chain', { url, extractorChain })
@@ -108,6 +120,10 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
     for (const extractorName of extractorChain) {
       const result = await runExtractor(extractorName, html, url, options)
       allCandidates.push(...result.candidates)
+
+      if (remainingTimeMs() <= 0) {
+        throw new Error('Scrape timed out after 60 seconds')
+      }
     }
   } catch (err) {
     if (allCandidates.length === 0) {
