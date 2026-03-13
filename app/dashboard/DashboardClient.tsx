@@ -594,6 +594,15 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                           return { ...prev, [competitorId]: { ...current, selectedMetric: metric } }
                         })
                       }}
+                      onPendingCurrencyChange={(competitorId, currency) => {
+                        const normalizedCurrency = normalizeCurrencyCode(currency)
+                        console.log('[pending] user adjusted fetched currency', { competitorId, currency: normalizedCurrency })
+                        setPendingPrices(prev => {
+                          const current = prev[competitorId]
+                          if (!current) return prev
+                          return { ...prev, [competitorId]: { ...current, currency: normalizedCurrency } }
+                        })
+                      }}
                       onPendingDecimalShift={handlePendingDecimalShift}
                       onConfirmPrice={handleConfirmPrice}
                       onRejectPrice={handleRejectPrice}
