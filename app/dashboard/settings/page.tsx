@@ -14,7 +14,19 @@ interface Store {
   stripe_customer_id?: string | null
 }
 
-// 1. Skapa en separat komponent för själva innehållet
+interface MockCompetitor {
+  id: string
+  label: string | null
+  url: string
+  last_price: number | null
+  last_price_currency: string | null
+  products: {
+    id: string
+    title: string
+    store_id: string
+  }[] | null
+}
+
 function SettingsContent() {
   const supabase = createClientComponentClient()
   const router = useRouter()
@@ -25,6 +37,13 @@ function SettingsContent() {
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
+
+  const [mockCompetitors, setMockCompetitors] = useState<MockCompetitor[]>([])
+  const [selectedCompetitorId, setSelectedCompetitorId] = useState('')
+  const [mockPriceInput, setMockPriceInput] = useState('')
+  const [mockEmailPriceInput, setMockEmailPriceInput] = useState('')
+  const [mockLoading, setMockLoading] = useState(false)
+  const [mockMessage, setMockMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -39,7 +58,29 @@ function SettingsContent() {
         .order('is_primary', { ascending: false })
         .order('created_at', { ascending: true })
 
-      setStores(allStores || [])
+      const safeStores = allStores || []
+      setStores(safeStores)
+
+      const storeIds = safeStores.map(store => store.id)
+      if (storeIds.length > 0) {
+        const { data: competitors, error: competitorError } = await supabase
+          .from('competitor_urls')
+          .select('id, label, url, last_price, last_price_currency, products!inner(id, title, store_id)')
+          .in('products.store_id', storeIds)
+          .order('created_at', { ascending: false })
+
+        if (competitorError) {
+          console.log('[settings] failed to load competitors for mock panel', { error: competitorError.message })
+        } else {
+          const list = ((competitors || []) as MockCompetitor[]).map(item => ({
+            ...item,
+            products: Array.isArray(item.products) ? item.products : [],
+          }))
+          setMockCompetitors(list)
+          if (list.length > 0) setSelectedCompetitorId(list[0].id)
+        }
+      }
+
       setLoading(false)
     }
     load()
@@ -92,6 +133,78 @@ function SettingsContent() {
     }
   }
 
+  const handleQueueMockPrice = async () => {
+    const parsedPrice = Number(mockPriceInput)
+    if (!selectedCompetitorId || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      setMockMessage({ type: 'error', text: 'Select a competitor and enter a valid price.' })
+      return
+    }
+
+    setMockLoading(true)
+    setMockMessage(null)
+
+    try {
+      const res = await fetch('/api/mock/queue-price-change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competitorId: selectedCompetitorId, mockPrice: parsedPrice }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        setMockMessage({ type: 'error', text: data?.error ?? 'Failed to queue mock price change.' })
+        return
+      }
+
+      console.log('[settings] queued mock price for cron', {
+        selectedCompetitorId,
+        parsedPrice,
+      })
+
+      setMockMessage({ type: 'success', text: 'Mock price queued. Next cron run will use this value once.' })
+    } catch {
+      setMockMessage({ type: 'error', text: 'Could not queue mock price. Try again.' })
+    } finally {
+      setMockLoading(false)
+    }
+  }
+
+  const handleSendMockEmail = async () => {
+    const parsedPrice = Number(mockEmailPriceInput)
+    if (!selectedCompetitorId || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      setMockMessage({ type: 'error', text: 'Select a competitor and enter a valid test email price.' })
+      return
+    }
+
+    setMockLoading(true)
+    setMockMessage(null)
+
+    try {
+      const res = await fetch('/api/mock/send-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competitorId: selectedCompetitorId, newPrice: parsedPrice }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        setMockMessage({ type: 'error', text: data?.error ?? 'Failed to send test email.' })
+        return
+      }
+
+      console.log('[settings] sent mock email', {
+        selectedCompetitorId,
+        parsedPrice,
+      })
+
+      setMockMessage({ type: 'success', text: 'Test email sent to your registered email.' })
+    } catch {
+      setMockMessage({ type: 'error', text: 'Could not send test email. Try again.' })
+    } finally {
+      setMockLoading(false)
+    }
+  }
+
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/')
@@ -99,6 +212,7 @@ function SettingsContent() {
 
   const primaryStore = stores.find(s => s.is_primary)
   const connectedStores = stores.filter(s => s.shop_domain)
+  const selectedCompetitor = mockCompetitors.find(c => c.id === selectedCompetitorId) ?? null
 
   if (loading) {
     return (
@@ -130,7 +244,6 @@ function SettingsContent() {
           </div>
         )}
 
-        {/* --- Account --- */}
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <h2 className="font-bold text-base mb-4">Account</h2>
           <div className="space-y-3">
@@ -155,7 +268,6 @@ function SettingsContent() {
           </div>
         </section>
 
-        {/* --- Shopify Stores --- */}
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-bold text-base">Shopify Stores</h2>
@@ -208,7 +320,85 @@ function SettingsContent() {
           )}
         </section>
 
-        {/* --- Billing --- */}
+        <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
+          <h2 className="font-bold text-base mb-1">Temporary Mock Testing</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Queue a one-time mock price for the selected competitor. The next cron run will use this mocked price and trigger your normal alert flow if it differs from current saved price.
+          </p>
+
+          {mockCompetitors.length === 0 ? (
+            <p className="text-sm text-gray-500">No competitors found for your stores yet.</p>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Competitor</label>
+                <select
+                  value={selectedCompetitorId}
+                  onChange={(event) => setSelectedCompetitorId(event.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                >
+                  {mockCompetitors.map(comp => (
+                    <option key={comp.id} value={comp.id}>
+                      {comp.products?.[0]?.title ?? 'Untitled product'} · {comp.label ?? comp.url}
+                    </option>
+                  ))}
+                </select>
+                {selectedCompetitor && (
+                  <div className="mt-2 text-xs text-gray-500">
+                    Current saved price: {selectedCompetitor.last_price ?? 'N/A'} {selectedCompetitor.last_price_currency ?? ''}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Mock price for next cron run</label>
+                  <input
+                    value={mockPriceInput}
+                    onChange={(event) => setMockPriceInput(event.target.value)}
+                    placeholder="e.g. 79.99"
+                    inputMode="decimal"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Test email price (send now)</label>
+                  <input
+                    value={mockEmailPriceInput}
+                    onChange={(event) => setMockEmailPriceInput(event.target.value)}
+                    placeholder="e.g. 79.99"
+                    inputMode="decimal"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleQueueMockPrice}
+                  disabled={mockLoading}
+                  className="text-sm font-semibold text-white bg-black px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {mockLoading ? 'Working...' : 'Queue mock price for cron'}
+                </button>
+                <button
+                  onClick={handleSendMockEmail}
+                  disabled={mockLoading}
+                  className="text-sm font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-4 py-2 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
+                >
+                  {mockLoading ? 'Working...' : 'Send test email now'}
+                </button>
+              </div>
+
+              {mockMessage && (
+                <div className={`text-sm rounded-lg px-3 py-2 ${mockMessage.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                  {mockMessage.text}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {primaryStore?.stripe_customer_id && (
           <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
             <h2 className="font-bold text-base mb-4">Billing</h2>
@@ -233,7 +423,6 @@ function SettingsContent() {
   )
 }
 
-// 2. Huvudkomponenten exporteras med Suspense
 export default function SettingsPage() {
   return (
     <Suspense fallback={
