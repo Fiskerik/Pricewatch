@@ -16,6 +16,17 @@ interface ExtractResult {
   scrapedCurrency: CurrencyCode | null
   candidates: ScrapedCandidate[]
   matchedPreferredMetric: boolean
+  metricUsed: string | null
+}
+
+interface CandidateScore {
+  metric: string
+  source: string
+  finalScore: number
+  reliabilityScore: number
+  penaltyScore: number
+  reliabilityReason: string
+  penaltyReasons: string[]
 }
 
 // ─── Price text parsing ───────────────────────────────────────────────────────
@@ -84,18 +95,106 @@ function isNonProductPrice(raw: string): boolean {
 
 function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: string | null): ExtractResult {
   if (candidates.length === 0) {
-    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
   }
 
+  const scoreCandidate = (candidate: ScrapedCandidate): CandidateScore => {
+    const source = candidate.source.toLowerCase()
+    const metric = candidate.metric.toLowerCase()
+
+    let reliabilityScore = 10
+    let reliabilityReason = 'generic selector/source fallback'
+
+    if (source.includes('shopify .js endpoint')) {
+      reliabilityScore = 120
+      reliabilityReason = 'shopify .js endpoint variant price'
+    } else if (source.includes('json-ld') && metric.includes('.offers')) {
+      reliabilityScore = 110
+      reliabilityReason = 'json-ld product offers price'
+    } else if (source.includes('shopify productjson')) {
+      reliabilityScore = 95
+      reliabilityReason = 'shopify embedded ProductJson variant price'
+    } else if (source.includes('etsy state') || source.includes('hm __next_data__')) {
+      reliabilityScore = 85
+      reliabilityReason = 'site app-state product payload'
+    } else if (source.includes('meta tag')) {
+      reliabilityScore = 40
+      reliabilityReason = 'meta product price tag'
+    } else if (source.includes('selector')) {
+      reliabilityScore = 20
+      reliabilityReason = 'css selector extracted text'
+    }
+
+    let penaltyScore = 0
+    const penaltyReasons: string[] = []
+
+    const addPenalty = (value: number, reason: string) => {
+      penaltyScore += value
+      penaltyReasons.push(reason)
+    }
+
+    if (/(shipping|frakt|delivery|postage|freight)/.test(metric) || /(shipping|frakt|delivery|postage|freight)/.test(source)) {
+      addPenalty(80, 'shipping/delivery indicator')
+    }
+    if (/(originalprice|regularprice|strikethrough|compare_at_price|wasprice|beforeprice|price-item--regular)/.test(metric)) {
+      addPenalty(55, 'likely previous/strikethrough price')
+    }
+    if (/(bundle|pack|setprice|multipack|2for|3for)/.test(metric) || /(bundle|pack|set)/.test(source)) {
+      addPenalty(35, 'bundle/set indicator')
+    }
+    if (/(unitprice|priceper|perkg|perg|perl|perm2|per m2|per st|per item)/.test(metric) || /(unit price|per kg|per l|per m2)/.test(source)) {
+      addPenalty(45, 'unit-price indicator')
+    }
+
+    return {
+      metric: candidate.metric,
+      source: candidate.source,
+      reliabilityScore,
+      penaltyScore,
+      finalScore: reliabilityScore - penaltyScore,
+      reliabilityReason,
+      penaltyReasons,
+    }
+  }
+
+  const scored = candidates.map(candidate => ({ candidate, score: scoreCandidate(candidate) }))
+
   const preferred = preferredMetric
-    ? candidates.find(c => c.metric === preferredMetric)
+    ? scored.find(({ candidate }) => candidate.metric === preferredMetric)
     : null
 
-  const picked = preferred ?? candidates[0]
+  const bestByScore = scored.reduce((best, current) => {
+    if (!best) return current
+    if (current.score.finalScore !== best.score.finalScore) {
+      return current.score.finalScore > best.score.finalScore ? current : best
+    }
+    return current.candidate.metric.localeCompare(best.candidate.metric) < 0 ? current : best
+  }, null as (typeof scored)[number] | null)
+
+  const selected = preferred ?? bestByScore
+  if (!selected) {
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
+  }
+
+  console.log('[scraper] candidate scoring', {
+    preferredMetric: preferredMetric ?? null,
+    metricUsed: selected.candidate.metric,
+    source: selected.candidate.source,
+    matchedPreferredMetric: Boolean(preferred),
+    score: selected.score.finalScore,
+    scoreBreakdown: {
+      reliabilityScore: selected.score.reliabilityScore,
+      reliabilityReason: selected.score.reliabilityReason,
+      penaltyScore: selected.score.penaltyScore,
+      penaltyReasons: selected.score.penaltyReasons,
+    },
+  })
+
   return {
-    price: picked.price,
-    scrapedCurrency: picked.currency,
+    price: selected.candidate.price,
+    scrapedCurrency: selected.candidate.currency,
     candidates,
+    metricUsed: selected.candidate.metric,
     matchedPreferredMetric: Boolean(preferred),
   }
 }
@@ -456,8 +555,7 @@ async function extractFromHtml(
 
   const picked = pickCandidate(candidates, options?.preferredMetric)
   if (picked.price !== null) {
-    const selectedMetric = candidates.find(c => c.price === picked.price && c.currency === picked.scrapedCurrency)?.metric
-    console.log('[scraper] picked html candidate', { url, preferredMetric: options?.preferredMetric ?? null, selectedMetric, matchedPreferred: picked.matchedPreferredMetric, candidateCount: candidates.length })
+    console.log('[scraper] picked html candidate', { url, preferredMetric: options?.preferredMetric ?? null, metricUsed: picked.metricUsed, matchedPreferred: picked.matchedPreferredMetric, candidateCount: candidates.length })
   }
 
   return picked
@@ -571,7 +669,7 @@ function buildShopifyProductJsonUrl(rawUrl: string): string | null {
 
 async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOptions): Promise<ExtractResult> {
   const productJsonUrl = buildShopifyProductJsonUrl(url)
-  if (!productJsonUrl) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+  if (!productJsonUrl) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
 
   try {
     const res = await fetch(productJsonUrl, {
@@ -581,7 +679,7 @@ async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOption
         'User-Agent': 'PricewatchBot/1.0 (+https://pricewatch.app)',
       },
     })
-    if (!res.ok) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    if (!res.ok) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
 
     const data = await res.json() as any
     const variants = Array.isArray(data?.variants) ? data.variants : []
@@ -602,13 +700,12 @@ async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOption
 
     const picked = pickCandidate(candidates, options?.preferredMetric)
     if (picked.price !== null) {
-      const selectedMetric = candidates.find(c => c.price === picked.price && c.currency === picked.scrapedCurrency)?.metric
-      console.log('[scraper] picked shopify.js candidate', { url, preferredMetric: options?.preferredMetric ?? null, selectedMetric, matchedPreferred: picked.matchedPreferredMetric, candidateCount: candidates.length })
+      console.log('[scraper] picked shopify.js candidate', { url, preferredMetric: options?.preferredMetric ?? null, metricUsed: picked.metricUsed, matchedPreferred: picked.matchedPreferredMetric, candidateCount: candidates.length })
     }
 
     return picked
   } catch {
-    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
   }
 }
 
@@ -630,7 +727,7 @@ async function scrapeShopifyProductJson(url: string, options?: ScrapePriceOption
 
 async function scrapeHmProductDirect(url: string, options?: ScrapePriceOptions): Promise<ExtractResult> {
   if (!url.includes('hm.com')) {
-    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
   }
 
   try {
@@ -644,12 +741,12 @@ async function scrapeHmProductDirect(url: string, options?: ScrapePriceOptions):
           '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       },
     })
-    if (!res.ok) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    if (!res.ok) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
     const html = await res.text()
 
     if (!html.includes('__NEXT_DATA__')) {
       console.log('[scraper][hm] direct fetch: no __NEXT_DATA__, falling through to JS render')
-      return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+      return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
     }
 
     // Step 1: parse the SSR HTML
@@ -697,10 +794,10 @@ async function scrapeHmProductDirect(url: string, options?: ScrapePriceOptions):
       }
     }
 
-    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
   } catch (err) {
     console.warn('[scraper][hm] direct fetch threw', String(err))
-    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false }
+    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
   }
 }
 
@@ -758,12 +855,10 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
   }
 
   const picked = pickCandidate(allCandidates, options?.preferredMetric)
-  const selected = allCandidates.find(c => c.price === picked.price && c.currency === picked.scrapedCurrency)
-
   console.log('[scraper] final pick', {
     url,
     preferredMetric: options?.preferredMetric ?? null,
-    metricUsed: selected?.metric ?? null,
+    metricUsed: picked.metricUsed,
     matchedPreferred: picked.matchedPreferredMetric,
     totalCandidates: allCandidates.length,
   })
@@ -774,6 +869,6 @@ export async function scrapePrice(url: string, _targetCurrency?: string, options
     candidates: allCandidates,
     matchedPreferredMetric: picked.matchedPreferredMetric,
     method: allCandidates.some(c => c.source.startsWith('Shopify')) ? 'direct' : 'js-render',
-    metricUsed: selected?.metric ?? null,
+    metricUsed: picked.metricUsed,
   }
 }
