@@ -70,6 +70,7 @@ const OOS_AVAILABILITY_TOKENS = [
 
 const STOCK_TEXT_PATTERNS: Array<{ status: 'in_stock' | 'out_of_stock'; pattern: RegExp }> = [
   { status: 'out_of_stock', pattern: /\b(out\s*of\s*stock|sold\s*out|currently\s+unavailable|not\s+available|temporarily\s+out\s+of\s+stock)\b/i },
+  { status: 'in_stock', pattern: /\bonly\s+\d+\s+left\s+in\s+stock\b/i },
   { status: 'in_stock', pattern: /\b(in\s*stock|available\s+now|ready\s+to\s+ship|ships?\s+today|lagerstatus\s*:\s*i\s*lager|i\s*lager|finns\s*i\s*lager)\b/i },
 ]
 
@@ -270,6 +271,9 @@ export function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: 
     if (source.includes('shopify .js endpoint')) {
       reliabilityScore = 120
       reliabilityReason = 'shopify .js endpoint variant price'
+    } else if (source.includes('amazon buy box')) {
+      reliabilityScore = 125
+      reliabilityReason = 'amazon buy-box displayed price'
     } else if (source.includes('json-ld') && metric.includes('.offers')) {
       reliabilityScore = 110
       reliabilityReason = 'json-ld product offers price'

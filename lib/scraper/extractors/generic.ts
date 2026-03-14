@@ -123,6 +123,40 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     }
   }
 
+
+  const amazonPriceCandidates = [
+    {
+      metric: 'amazon.buybox.corePrice',
+      source: 'Amazon buy box',
+      whole: html.match(/id="corePriceDisplay_desktop_feature_div"[\s\S]{0,2500}?a-price-whole[^>]*>\s*([^<]+)\s*</i),
+      fraction: html.match(/id="corePriceDisplay_desktop_feature_div"[\s\S]{0,2500}?a-price-fraction[^>]*>\s*([^<]+)\s*</i),
+      currencyHint: html.match(/id="corePriceDisplay_desktop_feature_div"[\s\S]{0,800}?a-price-symbol[^>]*>\s*([^<]+)\s*</i),
+    },
+    {
+      metric: 'amazon.buybox.reinventedPrice',
+      source: 'Amazon buy box',
+      whole: html.match(/id="corePrice_feature_div"[\s\S]{0,2500}?a-price-whole[^>]*>\s*([^<]+)\s*</i),
+      fraction: html.match(/id="corePrice_feature_div"[\s\S]{0,2500}?a-price-fraction[^>]*>\s*([^<]+)\s*</i),
+      currencyHint: html.match(/id="corePrice_feature_div"[\s\S]{0,800}?a-price-symbol[^>]*>\s*([^<]+)\s*</i),
+    },
+  ]
+
+  for (const candidate of amazonPriceCandidates) {
+    if (!candidate.whole) continue
+    const whole = candidate.whole[1].replace(/[^\d.,]/g, '')
+    const fraction = candidate.fraction?.[1]?.replace(/[^\d]/g, '') ?? ''
+    const amount = parsePriceText(fraction ? `${whole},${fraction}` : whole)
+    if (!amount) continue
+
+    const rawCurrency = candidate.currencyHint?.[1] ?? candidate.whole[0]
+    addCandidate({
+      metric: candidate.metric,
+      source: candidate.source,
+      price: amount,
+      currency: detectCurrency(rawCurrency, url),
+    })
+  }
+
   const etsyBuyBoxMatch = html.match(/data-buy-box-region=\"price\"[\s\S]{0,800}?wt-text-title-larger[^>]*>\s*([^<]+)\s*</i)
   if (etsyBuyBoxMatch) {
     const amount = parsePriceText(etsyBuyBoxMatch[1])
