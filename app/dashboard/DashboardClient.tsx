@@ -22,6 +22,8 @@ interface ScrapedCandidate {
 interface DiscoveredCompetitor {
   url: string
   label: string
+  price: number | null
+  currency: string | null
 }
 interface PendingPrice {
   rawPrice: number
@@ -394,25 +396,33 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       const discoverRes = await fetch('/api/competitors/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId: product.id, title: product.title, limit: 3 }),
+        body: JSON.stringify({ 
+          productId: product.id, 
+          title: product.title, 
+          currency: product.currency_code ?? 'USD',
+          limit: 3 
+        }),
       })
 
       const discoverData = await discoverRes.json()
       if (!discoverRes.ok) {
-        console.log('[competitors/discover] discover request failed', {
+        console.log('[competitors/discover] request failed', {
           productId: product.id,
-          title: product.title,
           error: discoverData?.error ?? 'Unknown error',
         })
         return
       }
 
-      const candidates: DiscoveredCompetitor[] = Array.isArray(discoverData?.candidates) ? discoverData.candidates : []
+      const candidates: DiscoveredCompetitor[] = Array.isArray(discoverData?.candidates) 
+        ? discoverData.candidates 
+        : []
+      
       console.log('[competitors/discover] candidates discovered', {
         productId: product.id,
         discoveredCount: candidates.length,
       })
 
+      // Auto-add the best candidates (cheapest with stock)
       let addedCount = 0
       for (const candidate of candidates) {
         const currentCompetitorCount = competitors.length + addedCount
@@ -425,14 +435,14 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             productId: product.id,
             url: candidate.url,
             label: candidate.label ?? null,
-            initialPrice: null,
-            initialCurrency: null,
+            initialPrice: candidate.price,
+            initialCurrency: candidate.currency,
           }),
         })
 
         const addData = await addRes.json()
         if (!addRes.ok) {
-          console.log('[competitors/discover] add candidate failed', {
+          console.log('[competitors/discover] add failed', {
             productId: product.id,
             url: candidate.url,
             error: addData?.error ?? 'Unknown error',
