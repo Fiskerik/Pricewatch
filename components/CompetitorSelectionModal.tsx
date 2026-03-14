@@ -9,7 +9,6 @@ interface DiscoveredCompetitor {
   currency: string | null
   inStock: boolean
   confidence: number
-  imageUrl?: string | null
   domain: string
 }
  
@@ -38,7 +37,7 @@ export default function CompetitorSelectionModal({
  
   useEffect(() => {
     const hasInitialCandidates = Array.isArray(initialCandidates)
-
+ 
     if (hasInitialCandidates) {
       setCandidates(initialCandidates)
       setError(initialCandidates.length === 0
@@ -47,11 +46,11 @@ export default function CompetitorSelectionModal({
       setLoading(false)
       return
     }
-
+ 
     const loadCandidates = async () => {
       setLoading(true)
       setError(null)
-
+ 
       try {
         const res = await fetch('/api/competitors/discover', {
           method: 'POST',
@@ -63,17 +62,17 @@ export default function CompetitorSelectionModal({
             limit: 10
           }),
         })
-
+ 
         if (!res.ok) {
           const data = await res.json()
           throw new Error(data?.error || 'Failed to discover competitors')
         }
-
+ 
         const data = await res.json()
         const discoveredCandidates = Array.isArray(data?.candidates) ? data.candidates : []
-
+ 
         setCandidates(discoveredCandidates)
-
+ 
         if (discoveredCandidates.length === 0) {
           setError('No competitors found. Try refining your product title or add competitors manually.')
         }
@@ -83,10 +82,10 @@ export default function CompetitorSelectionModal({
         setLoading(false)
       }
     }
-
+ 
     loadCandidates()
   }, [productId, productTitle, productCurrency, initialCandidates])
-
+ 
   const handleToggle = (url: string) => {
     setSelected(prev => {
       const next = new Set(prev)
@@ -154,6 +153,9 @@ export default function CompetitorSelectionModal({
               <p className="text-sm text-gray-500 truncate">
                 Searching for: <span className="font-semibold">{productTitle}</span>
               </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Click any row to visit the competitor page in a new tab
+              </p>
             </div>
             <button
               onClick={onClose}
@@ -170,7 +172,7 @@ export default function CompetitorSelectionModal({
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="inline-block w-8 h-8 border-3 border-blue-400 border-t-transparent rounded-full animate-spin mb-3"></div>
-                <div className="text-sm text-gray-500">Searching Google Shopping and partner stores...</div>
+                <div className="text-sm text-gray-500">Searching Google Shopping for competitors...</div>
               </div>
             </div>
           )}
@@ -196,83 +198,102 @@ export default function CompetitorSelectionModal({
                 </button>
               </div>
  
-              {/* Grid of competitors */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Table of competitors */}
+              <div className="space-y-2">
                 {candidates.map((candidate) => {
                   const isSelected = selected.has(candidate.url)
                   const currency = normalizeCurrencyCode(candidate.currency || productCurrency)
                   
                   return (
-                    <button
+                    <div
                       key={candidate.url}
-                      onClick={() => handleToggle(candidate.url)}
-                      className={`text-left rounded-xl border-2 p-3 transition-all hover:shadow-md ${
+                      className={`rounded-xl border-2 transition-all ${
                         isSelected 
                           ? 'border-blue-500 bg-blue-50' 
                           : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}
                     >
-                      {/* Image */}
-                      <div className="w-full aspect-square rounded-lg bg-gray-100 overflow-hidden mb-3">
-                        {candidate.imageUrl ? (
-                          <img 
-                            src={candidate.imageUrl} 
-                            alt={candidate.label}
-                            className="w-full h-full object-contain"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none'
+                      {/* Clickable row to visit link */}
+                      <a
+                        href={candidate.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-4 p-4 hover:bg-gray-50/50 transition-colors rounded-t-xl"
+                        onClick={(e) => {
+                          // Don't navigate if clicking the checkbox area
+                          const target = e.target as HTMLElement
+                          if (target.closest('button')) {
+                            e.preventDefault()
+                          }
+                        }}
+                      >
+                        {/* Checkbox */}
+                        <div className="shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleToggle(candidate.url)
                             }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-300 text-4xl">
-                            📦
+                            className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${
+                              isSelected
+                                ? 'bg-blue-600 border-blue-600'
+                                : 'bg-white border-gray-300 hover:border-gray-400'
+                            }`}
+                          >
+                            {isSelected && (
+                              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+ 
+                        {/* Store info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-gray-500 mb-1 truncate">
+                            {candidate.domain}
                           </div>
-                        )}
-                      </div>
- 
-                      {/* Store name */}
-                      <div className="text-xs text-gray-500 mb-1 truncate">
-                        {candidate.domain}
-                      </div>
- 
-                      {/* Product name */}
-                      <div className="font-semibold text-sm leading-tight mb-2 line-clamp-2 min-h-[2.5rem]">
-                        {candidate.label}
-                      </div>
- 
-                      {/* Price */}
-                      {candidate.price !== null ? (
-                        <div className="text-lg font-extrabold text-gray-900">
-                          {formatMoney(candidate.price, currency)}
+                          <div className="font-semibold text-sm leading-tight line-clamp-2">
+                            {candidate.label}
+                          </div>
                         </div>
-                      ) : (
-                        <div className="text-sm text-gray-400">
-                          Price not found
-                        </div>
-                      )}
  
-                      {/* Stock status */}
-                      {candidate.inStock ? (
-                        <div className="text-xs text-emerald-600 mt-1">
-                          In stock
+                        {/* Price and stock */}
+                        <div className="shrink-0 text-right">
+                          {candidate.price !== null ? (
+                            <div className="text-lg font-extrabold text-gray-900">
+                              {formatMoney(candidate.price, currency)}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-400">
+                              Price not found
+                            </div>
+                          )}
+                          
+                          {/* Stock status */}
+                          <div className="mt-1">
+                            {candidate.inStock ? (
+                              <span className="inline-flex items-center rounded-md bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                In stock
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-md bg-red-100 border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                                Out of stock
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      ) : (
-                        <div className="text-xs text-red-600 mt-1">
-                          Out of stock
-                        </div>
-                      )}
  
-                      {/* Selection indicator */}
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        <div className={`w-full text-center text-xs font-bold py-1.5 rounded-lg transition-colors ${
-                          isSelected 
-                            ? 'bg-blue-600 text-white' 
-                            : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {isSelected ? '✓ Selected' : 'Click to select'}
+                        {/* External link icon */}
+                        <div className="shrink-0 text-gray-400">
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
                         </div>
-                      </div>
-                    </button>
+                      </a>
+                    </div>
                   )
                 })}
               </div>
