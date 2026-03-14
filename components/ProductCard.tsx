@@ -99,6 +99,7 @@ interface Props {
   onAddCompetitor: () => void
   onFindCompetitors: () => void
   discoveringCompetitors?: boolean
+  discoverMessage?: { type: 'success' | 'error' | 'info'; text: string } | null
   onEditCompetitor: (competitor: CompetitorUrl) => void
   onRefreshCompetitor: (competitorId: string) => void
   onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
@@ -174,6 +175,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 
 export default function ProductCard({
   product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onFindCompetitors, discoveringCompetitors, onEditCompetitor, onRefreshCompetitor,
+  discoverMessage,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
@@ -283,6 +285,17 @@ export default function ProductCard({
             const showHistory = !!expandedHistory[comp.id]
             const compCurrency = normalizeCurrencyCode(comp.last_price_currency || productCurrency)
             const activeMetric = pending?.metricUsed ?? pending?.selectedMetric ?? comp.selected_price_metric
+            const stockStatus = comp.last_stock_status ?? 'unknown'
+            const stockBadgeClass = stockStatus === 'in_stock'
+              ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
+              : stockStatus === 'out_of_stock'
+                ? 'bg-rose-100 border-rose-200 text-rose-700'
+                : 'bg-gray-100 border-gray-200 text-gray-600'
+            const stockLabel = stockStatus === 'in_stock'
+              ? 'In stock'
+              : stockStatus === 'out_of_stock'
+                ? 'Out of stock'
+                : 'Stock unknown'
 
             let hostname = comp.url
             try { hostname = new URL(comp.url).hostname } catch { /* keep raw */ }
@@ -366,6 +379,11 @@ export default function ProductCard({
                         </div>
                         <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
                           {cheaper ? 'CHEAPER' : 'HIGHER'}
+                        </div>
+                        <div className="mt-1">
+                          <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stockBadgeClass}`}>
+                            {stockLabel}
+                          </span>
                         </div>
                         {vatRate > 0 && (
                           <div className="text-[10px] text-gray-400">{showVat ? `incl. ${vatRate}% VAT` : `excl. ${vatRate}% VAT`}</div>
@@ -536,6 +554,18 @@ export default function ProductCard({
               {atLimit ? `Competitor limit reached (${competitorLimit})` : '+ Add competitor URL'}
             </button>
           </div>
+
+          {discoverMessage && (
+            <div className={`rounded-lg border px-3 py-2 text-xs ${
+              discoverMessage.type === 'success'
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : discoverMessage.type === 'error'
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : 'bg-blue-50 border-blue-200 text-blue-700'
+            }`}>
+              {discoverMessage.text}
+            </div>
+          )}
         </div>
       )}
     </div>
