@@ -94,6 +94,12 @@ async function discoverFromGoogle(title: string): Promise<Array<{ url: string; l
   const html = await fetchHtml(`https://www.google.com/search?tbm=shop&q=${query}`)
   const $ = cheerio.load(html)
   const candidates: Array<{ url: string; label: string; imageUrl?: string | null }> = []
+
+  console.log('[competitors/discover] google shopping response', {
+    htmlLength: html.length,
+    hasCaptcha: /captcha|detected unusual traffic/i.test(html),
+    hasConsentGate: /consent\.google|before you continue/i.test(html),
+  })
  
   // Try to extract product cards with images
   $('div[data-sh-card]').each((_, card) => {
@@ -118,6 +124,69 @@ async function discoverFromGoogle(title: string): Promise<Array<{ url: string; l
     })
   }
  
+  return candidates
+}
+
+async function discoverFromGoogleWeb(title: string): Promise<Array<{ url: string; label: string; imageUrl?: string | null }>> {
+  const query = encodeURIComponent(`${title} buy`)
+  const html = await fetchHtml(`https://www.google.com/search?q=${query}&num=20&hl=en`)
+  const $ = cheerio.load(html)
+  const candidates: Array<{ url: string; label: string; imageUrl?: string | null }> = []
+
+  $('a[href^="/url?"]').each((_, element) => {
+    const href = $(element).attr('href') ?? ''
+    const decodedHref = decodeGoogleHref(href)
+    const text = $(element).find('h3').first().text() || $(element).text()
+    pushCandidate(candidates, decodedHref, text)
+  })
+
+  console.log('[competitors/discover] google web response', {
+    htmlLength: html.length,
+    candidates: candidates.length,
+    hasCaptcha: /captcha|detected unusual traffic/i.test(html),
+    hasConsentGate: /consent\.google|before you continue/i.test(html),
+  })
+
+  return candidates
+}
+
+async function discoverFromDuckDuckGo(title: string): Promise<Array<{ url: string; label: string; imageUrl?: string | null }>> {
+  const query = encodeURIComponent(`${title} buy`)
+  const html = await fetchHtml(`https://duckduckgo.com/html/?q=${query}`)
+  const $ = cheerio.load(html)
+  const candidates: Array<{ url: string; label: string; imageUrl?: string | null }> = []
+
+  $('a.result__a').each((_, element) => {
+    const href = $(element).attr('href') ?? ''
+    const text = $(element).text()
+    pushCandidate(candidates, href, text)
+  })
+
+  console.log('[competitors/discover] duckduckgo response', {
+    htmlLength: html.length,
+    candidates: candidates.length,
+  })
+
+  return candidates
+}
+
+async function discoverFromBing(title: string): Promise<Array<{ url: string; label: string; imageUrl?: string | null }>> {
+  const query = encodeURIComponent(`${title} buy`)
+  const html = await fetchHtml(`https://www.bing.com/search?q=${query}&count=20&setlang=en`)
+  const $ = cheerio.load(html)
+  const candidates: Array<{ url: string; label: string; imageUrl?: string | null }> = []
+
+  $('li.b_algo h2 a').each((_, element) => {
+    const href = $(element).attr('href') ?? ''
+    const text = $(element).text()
+    pushCandidate(candidates, href, text)
+  })
+
+  console.log('[competitors/discover] bing response', {
+    htmlLength: html.length,
+    candidates: candidates.length,
+  })
+
   return candidates
 }
  
@@ -168,9 +237,41 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.log('[competitors/discover] google discovery failed', { productId, error: String(error) })
   }
+
+  if (allUrlCandidates.length < limit) {
+    try {
+      const googleWebCandidates = await discoverFromGoogleWeb(title)
+      console.log('[competitors/discover] google web candidates', { productId, count: googleWebCandidates.length })
+      allUrlCandidates.push(...googleWebCandidates)
+    } catch (error) {
+      console.log('[competitors/discover] google web discovery failed', { productId, error: String(error) })
+    }
+  }
+
+  if (allUrlCandidates.length < limit) {
+    try {
+      const duckDuckGoCandidates = await discoverFromDuckDuckGo(title)
+      console.log('[competitors/discover] duckduckgo candidates', { productId, count: duckDuckGoCandidates.length })
+      allUrlCandidates.push(...duckDuckGoCandidates)
+    } catch (error) {
+      console.log('[competitors/discover] duckduckgo discovery failed', { productId, error: String(error) })
+    }
+  }
+
+  if (allUrlCandidates.length < limit) {
+    try {
+      const bingCandidates = await discoverFromBing(title)
+      console.log('[competitors/discover] bing candidates', { productId, count: bingCandidates.length })
+      allUrlCandidates.push(...bingCandidates)
+    } catch (error) {
+      console.log('[competitors/discover] bing discovery failed', { productId, error: String(error) })
+    }
+  }
+
+  const dedupedCandidates = Array.from(new Map(allUrlCandidates.map(candidate => [candidate.url, candidate])).values())
  
   // Filter out existing competitors
-  const newUrlCandidates = allUrlCandidates
+  const newUrlCandidates = dedupedCandidates
     .filter(c => !existingUrls.has(c.url))
     .slice(0, limit * 2) // Get extras for filtering
  
