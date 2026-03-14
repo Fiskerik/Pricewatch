@@ -6,7 +6,6 @@ import Sidebar from '@/components/Sidebar'
 import ProductCard from '@/components/ProductCard'
 import AddCompetitorModal from '@/components/AddCompetitorModal'
 import AddProductModal from '@/components/AddProductModal'
-import CompetitorSelectionModal from '@/components/CompetitorSelectionModal'
 import AlertBadge from '@/components/AlertBadge'
 import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/components/VatCountrySelector'
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
@@ -20,17 +19,6 @@ interface ScrapedCandidate {
   confidence?: number
 }
 
-type DiscoverMessage = { type: 'success' | 'error' | 'info'; text: string }
-interface DiscoveredCompetitor {
-  url: string
-  label: string
-  price: number | null
-  currency: string | null
-  inStock: boolean
-  confidence: number
-  imageUrl?: string | null
-  domain: string
-}
 interface PendingPrice {
   rawPrice: number
   price: number
@@ -61,7 +49,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [competitorSelectionFor, setCompetitorSelectionFor] = useState<Product | null>(null)
 
   const [vatCountryCode, setVatCountryCode] = useState<string>('SE')
   const [vatRate, setVatRate] = useState<number>(25)
@@ -74,9 +61,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [draggingProductId, setDraggingProductId] = useState<string | null>(null)
 
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
-  const [discoveringCompetitorIds, setDiscoveringCompetitorIds] = useState<Record<string, boolean>>({})
-  const [discoverMessages, setDiscoverMessages] = useState<Record<string, DiscoverMessage | null>>({})
-  const [discoveredCandidatesByProduct, setDiscoveredCandidatesByProduct] = useState<Record<string, DiscoveredCompetitor[]>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
   const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
   const [decimalShifts, setDecimalShifts] = useState<Record<string, number>>({})
@@ -393,76 +377,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     triggerBackgroundFetch(competitor.id)
   }
 
-  const handleDiscoverCompetitors = async (product: Product) => {
-    if (discoveringCompetitorIds[product.id]) return
-
-    console.log('[discover] starting', { productId: product.id, title: product.title })
-    setDiscoveringCompetitorIds(prev => ({ ...prev, [product.id]: true }))
-    setDiscoverMessages(prev => ({
-      ...prev,
-      [product.id]: { type: 'info', text: 'Searching for competitors in the background…' },
-    }))
-
-    try {
-      const res = await fetch('/api/competitors/discover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: product.id,
-          title: product.title,
-          currency: product.currency_code ?? 'USD',
-          limit: 10,
-        }),
-      })
-
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to discover competitors')
-      }
-
-      const candidates = Array.isArray(data?.candidates) ? data.candidates as DiscoveredCompetitor[] : []
-      console.log('[discover] completed', { productId: product.id, count: candidates.length })
-
-      setDiscoveredCandidatesByProduct(prev => ({ ...prev, [product.id]: candidates }))
-
-      if (candidates.length > 0) {
-        setDiscoverMessages(prev => ({
-          ...prev,
-          [product.id]: {
-            type: 'success',
-            text: `Competitors found (${candidates.length}). Click “View found competitors” to review and add them.`,
-          },
-        }))
-      } else {
-        setDiscoverMessages(prev => ({
-          ...prev,
-          [product.id]: {
-            type: 'error',
-            text: 'No competitors found. You can try again or add competitors manually.',
-          },
-        }))
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to discover competitors'
-      console.log('[discover] failed', { productId: product.id, message })
-      setDiscoverMessages(prev => ({
-        ...prev,
-        [product.id]: { type: 'error', text: message },
-      }))
-    } finally {
-      setDiscoveringCompetitorIds(prev => ({ ...prev, [product.id]: false }))
-    }
-  }
-
-  const handleCompetitorsAdded = (productId: string, _count: number) => {
-    setDiscoverMessages(prev => ({ ...prev, [productId]: null }))
-    setDiscoveredCandidatesByProduct(prev => {
-      const next = { ...prev }
-      delete next[productId]
-      return next
-    })
-    window.location.reload()
-  }
 
 
   const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
@@ -760,11 +674,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       onToggle={() => setExpandedProducts(prev => ({ ...prev, [product.id]: !prev[product.id] }))}
                       onEditProduct={() => setEditingProduct(product)}
                       onAddCompetitor={() => setAddCompetitorFor(product.id)}
-                      onFindCompetitors={() => handleDiscoverCompetitors(product)}
-                      discoveringCompetitors={!!discoveringCompetitorIds[product.id]}
-                      discoverMessage={discoverMessages[product.id] ?? null}
-                      discoveredCompetitorCount={discoveredCandidatesByProduct[product.id]?.length ?? 0}
-                      onViewDiscoveredCompetitors={() => setCompetitorSelectionFor(product)}
                       onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                       onRefreshCompetitor={triggerBackgroundFetch}
                       onCurrencyUpdated={handleProductCurrencyUpdated}
@@ -968,19 +877,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           onClose={() => setEditingProduct(null)}
           onAdded={() => {}}
           onUpdated={handleProductUpdated}
-        />
-      )}
-      {competitorSelectionFor && (
-        <CompetitorSelectionModal
-          productId={competitorSelectionFor.id}
-          productTitle={competitorSelectionFor.title}
-          productCurrency={competitorSelectionFor.currency_code ?? 'USD'}
-          initialCandidates={discoveredCandidatesByProduct[competitorSelectionFor.id]}
-          onClose={() => setCompetitorSelectionFor(null)}
-          onCompetitorsAdded={(count) => {
-            handleCompetitorsAdded(competitorSelectionFor.id, count)
-            setCompetitorSelectionFor(null)
-          }}
         />
       )}
     </div>

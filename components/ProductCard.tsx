@@ -97,11 +97,6 @@ interface Props {
   onToggle: () => void
   onEditProduct: (product: Product) => void
   onAddCompetitor: () => void
-  onFindCompetitors: () => void
-  discoveringCompetitors?: boolean
-  discoverMessage?: { type: 'success' | 'error' | 'info'; text: string } | null
-  discoveredCompetitorCount?: number
-  onViewDiscoveredCompetitors?: () => void
   onEditCompetitor: (competitor: CompetitorUrl) => void
   onRefreshCompetitor: (competitorId: string) => void
   onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
@@ -176,8 +171,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 }
 
 export default function ProductCard({
-  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onFindCompetitors, discoveringCompetitors, onEditCompetitor, onRefreshCompetitor,
-  discoverMessage, discoveredCompetitorCount = 0, onViewDiscoveredCompetitors,
+  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
@@ -548,19 +542,7 @@ export default function ProductCard({
             )
           })}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              onClick={onFindCompetitors}
-              disabled={atLimit || discoveringCompetitors}
-              className="w-full border border-blue-200 bg-blue-50 text-blue-700 rounded-xl py-3 text-sm font-semibold hover:bg-blue-100 active:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {discoveringCompetitors ? (
-                <span className="inline-flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  Searching for competitors…
-                </span>
-              ) : 'Find competitors'}
-            </button>
+          <div className="grid grid-cols-1 gap-2">
             <button
               onClick={onAddCompetitor}
               disabled={atLimit}
@@ -569,28 +551,6 @@ export default function ProductCard({
               {atLimit ? `Competitor limit reached (${competitorLimit})` : '+ Add competitor URL'}
             </button>
           </div>
-
-          {discoverMessage && (
-            <div className={`rounded-lg border px-3 py-2 text-xs ${
-              discoverMessage.type === 'success'
-                ? 'bg-green-50 border-green-200 text-green-700'
-                : discoverMessage.type === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-700'
-                  : 'bg-blue-50 border-blue-200 text-blue-700'
-            }`}>
-              <div className="flex items-center justify-between gap-2">
-                <span>{discoverMessage.text}</span>
-                {discoverMessage.type === 'success' && discoveredCompetitorCount > 0 && onViewDiscoveredCompetitors && (
-                  <button
-                    onClick={onViewDiscoveredCompetitors}
-                    className="shrink-0 rounded-md border border-current/30 px-2 py-1 font-semibold hover:bg-white/60 transition-colors"
-                  >
-                    View found competitors
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
