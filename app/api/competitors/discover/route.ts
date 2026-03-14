@@ -18,6 +18,7 @@ interface DiscoveryCandidate {
 const BLOCKED_HOSTS = new Set([
   'google.com', 'www.google.com', 'shopping.google.com',
   'webcache.googleusercontent.com', 'duckduckgo.com', 'www.duckduckgo.com',
+  'bing.com', 'www.bing.com',
 ])
  
 function normalizeUrl(raw: string): string | null {
@@ -48,6 +49,31 @@ function decodeGoogleHref(href: string): string | null {
     return urlParams.get('q')
   }
   return href
+}
+
+function decodeBingHref(href: string): string | null {
+  if (!href) return null
+
+  try {
+    const parsed = new URL(href)
+    const host = parsed.hostname.replace(/^www\./, '')
+
+    if (host === 'bing.com') {
+      const encodedTarget = parsed.searchParams.get('u')
+      if (encodedTarget) {
+        const normalizedTarget = encodedTarget.replace(/^a1/, '')
+        try {
+          return Buffer.from(normalizedTarget, 'base64').toString('utf8')
+        } catch {
+          return decodeURIComponent(encodedTarget)
+        }
+      }
+    }
+
+    return href
+  } catch {
+    return href
+  }
 }
  
 async function fetchHtml(url: string): Promise<string> {
@@ -177,7 +203,7 @@ async function discoverFromBing(title: string): Promise<Array<{ url: string; lab
   const candidates: Array<{ url: string; label: string; imageUrl?: string | null }> = []
 
   $('li.b_algo h2 a').each((_, element) => {
-    const href = $(element).attr('href') ?? ''
+    const href = decodeBingHref($(element).attr('href') ?? '')
     const text = $(element).text()
     pushCandidate(candidates, href, text)
   })
