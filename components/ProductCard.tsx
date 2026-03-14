@@ -100,6 +100,8 @@ interface Props {
   onFindCompetitors: () => void
   discoveringCompetitors?: boolean
   discoverMessage?: { type: 'success' | 'error' | 'info'; text: string } | null
+  discoveredCompetitorCount?: number
+  onViewDiscoveredCompetitors?: () => void
   onEditCompetitor: (competitor: CompetitorUrl) => void
   onRefreshCompetitor: (competitorId: string) => void
   onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
@@ -175,7 +177,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 
 export default function ProductCard({
   product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onFindCompetitors, discoveringCompetitors, onEditCompetitor, onRefreshCompetitor,
-  discoverMessage,
+  discoverMessage, discoveredCompetitorCount = 0, onViewDiscoveredCompetitors,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
@@ -552,7 +554,12 @@ export default function ProductCard({
               disabled={atLimit || discoveringCompetitors}
               className="w-full border border-blue-200 bg-blue-50 text-blue-700 rounded-xl py-3 text-sm font-semibold hover:bg-blue-100 active:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {discoveringCompetitors ? 'Finding competitors…' : 'Find competitors'}
+              {discoveringCompetitors ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  Searching for competitors…
+                </span>
+              ) : 'Find competitors'}
             </button>
             <button
               onClick={onAddCompetitor}
@@ -571,7 +578,17 @@ export default function ProductCard({
                   ? 'bg-red-50 border-red-200 text-red-700'
                   : 'bg-blue-50 border-blue-200 text-blue-700'
             }`}>
-              {discoverMessage.text}
+              <div className="flex items-center justify-between gap-2">
+                <span>{discoverMessage.text}</span>
+                {discoverMessage.type === 'success' && discoveredCompetitorCount > 0 && onViewDiscoveredCompetitors && (
+                  <button
+                    onClick={onViewDiscoveredCompetitors}
+                    className="shrink-0 rounded-md border border-current/30 px-2 py-1 font-semibold hover:bg-white/60 transition-colors"
+                  >
+                    View found competitors
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

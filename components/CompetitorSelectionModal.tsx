@@ -17,6 +17,7 @@ interface Props {
   productId: string
   productTitle: string
   productCurrency: string
+  initialCandidates?: DiscoveredCompetitor[]
   onClose: () => void
   onCompetitorsAdded: (count: number) => void
 }
@@ -25,6 +26,7 @@ export default function CompetitorSelectionModal({
   productId, 
   productTitle, 
   productCurrency,
+  initialCandidates,
   onClose, 
   onCompetitorsAdded 
 }: Props) {
@@ -35,32 +37,43 @@ export default function CompetitorSelectionModal({
   const [error, setError] = useState<string | null>(null)
  
   useEffect(() => {
+    const hasInitialCandidates = Array.isArray(initialCandidates)
+
+    if (hasInitialCandidates) {
+      setCandidates(initialCandidates)
+      setError(initialCandidates.length === 0
+        ? 'No competitors found. Try refining your product title or add competitors manually.'
+        : null)
+      setLoading(false)
+      return
+    }
+
     const loadCandidates = async () => {
       setLoading(true)
       setError(null)
-      
+
       try {
         const res = await fetch('/api/competitors/discover', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            productId, 
-            title: productTitle, 
+          body: JSON.stringify({
+            productId,
+            title: productTitle,
             currency: productCurrency,
-            limit: 10 
+            limit: 10
           }),
         })
- 
+
         if (!res.ok) {
           const data = await res.json()
           throw new Error(data?.error || 'Failed to discover competitors')
         }
- 
+
         const data = await res.json()
         const discoveredCandidates = Array.isArray(data?.candidates) ? data.candidates : []
-        
+
         setCandidates(discoveredCandidates)
-        
+
         if (discoveredCandidates.length === 0) {
           setError('No competitors found. Try refining your product title or add competitors manually.')
         }
@@ -70,10 +83,10 @@ export default function CompetitorSelectionModal({
         setLoading(false)
       }
     }
- 
+
     loadCandidates()
-  }, [productId, productTitle, productCurrency])
- 
+  }, [productId, productTitle, productCurrency, initialCandidates])
+
   const handleToggle = (url: string) => {
     setSelected(prev => {
       const next = new Set(prev)
@@ -157,7 +170,7 @@ export default function CompetitorSelectionModal({
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="inline-block w-8 h-8 border-3 border-blue-400 border-t-transparent rounded-full animate-spin mb-3"></div>
-                <div className="text-sm text-gray-500">Searching Google Shopping...</div>
+                <div className="text-sm text-gray-500">Searching Google Shopping and partner stores...</div>
               </div>
             </div>
           )}
