@@ -247,7 +247,15 @@ export default function ProductCard({
           )}
           <span className="text-gray-300 text-sm">{isExpanded ? '▲' : '▼'}</span>
         </div>
-        <span className="sm:hidden text-gray-300 text-sm shrink-0">{isExpanded ? '▲' : '▼'}</span>
+        <div className="sm:hidden flex items-center gap-2 shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEditProduct(product) }}
+            className="text-gray-400 hover:text-black transition-colors text-sm"
+            title="Edit product"
+            aria-label={`Edit ${product.title}`}
+          >✏️</button>
+          <span className="text-gray-300 text-sm">{isExpanded ? '▲' : '▼'}</span>
+        </div>
       </button>
 
       {isExpanded && (
