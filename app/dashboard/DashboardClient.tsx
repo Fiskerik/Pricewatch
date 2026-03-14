@@ -25,6 +25,8 @@ interface DiscoveredCompetitor {
   price: number | null
   currency: string | null
 }
+
+type DiscoverMessage = { type: 'success' | 'error' | 'info'; text: string }
 interface PendingPrice {
   rawPrice: number
   price: number
@@ -68,6 +70,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
   const [discoveringCompetitorIds, setDiscoveringCompetitorIds] = useState<Record<string, boolean>>({})
+  const [discoverMessages, setDiscoverMessages] = useState<Record<string, DiscoverMessage | null>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
   const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
   const [decimalShifts, setDecimalShifts] = useState<Record<string, number>>({})
@@ -387,9 +390,14 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const handleDiscoverCompetitors = async (product: Product) => {
     const competitors = product.competitor_urls ?? []
     if (limits.competitors !== Infinity && competitors.length >= limits.competitors) {
+      setDiscoverMessages(prev => ({
+        ...prev,
+        [product.id]: { type: 'error', text: `Competitor limit reached (${limits.competitors}). Remove one and try again.` },
+      }))
       return
     }
 
+    setDiscoverMessages(prev => ({ ...prev, [product.id]: null }))
     setDiscoveringCompetitorIds(prev => ({ ...prev, [product.id]: true }))
 
     try {
@@ -404,12 +412,37 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         }),
       })
 
-      const discoverData = await discoverRes.json()
+      let discoverData: any = null
+      try {
+        discoverData = await discoverRes.json()
+      } catch {
+        discoverData = null
+      }
+
       if (!discoverRes.ok) {
+        const errorText = discoverData?.error ?? 'Unknown error'
+        const statusMessage = discoverRes.status === 400
+          ? 'Could not search for competitors because product details are incomplete.'
+          : discoverRes.status === 401
+            ? 'Your session expired. Please refresh and sign in again.'
+            : discoverRes.status === 404
+              ? 'This product could not be found. Refresh the page and try again.'
+              : discoverRes.status === 429
+                ? 'Too many discovery requests right now. Please wait a moment and retry.'
+                : discoverRes.status >= 500
+                  ? 'Server error while finding competitors. Please try again shortly.'
+                  : `Could not find competitors: ${errorText}`
+
         console.log('[competitors/discover] request failed', {
           productId: product.id,
-          error: discoverData?.error ?? 'Unknown error',
+          status: discoverRes.status,
+          error: errorText,
         })
+
+        setDiscoverMessages(prev => ({
+          ...prev,
+          [product.id]: { type: 'error', text: statusMessage },
+        }))
         return
       }
 
@@ -422,8 +455,20 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         discoveredCount: candidates.length,
       })
 
+      if (candidates.length === 0) {
+        setDiscoverMessages(prev => ({
+          ...prev,
+          [product.id]: {
+            type: 'info',
+            text: 'No matching competitors were found. Try adding one manually or editing the product title to be more specific.',
+          },
+        }))
+        return
+      }
+
       // Auto-add the best candidates (cheapest with stock)
       let addedCount = 0
+      let addFailures = 0
       for (const candidate of candidates) {
         const currentCompetitorCount = competitors.length + addedCount
         if (limits.competitors !== Infinity && currentCompetitorCount >= limits.competitors) break
@@ -442,9 +487,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
         const addData = await addRes.json()
         if (!addRes.ok) {
+          addFailures += 1
           console.log('[competitors/discover] add failed', {
             productId: product.id,
             url: candidate.url,
+            status: addRes.status,
             error: addData?.error ?? 'Unknown error',
           })
           continue
@@ -455,11 +502,40 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           handleCompetitorAdded(product.id, addData.competitor)
         }
       }
+
+      if (addedCount > 0) {
+        const suffix = addFailures > 0 ? ` (${addFailures} skipped due to errors)` : ''
+        setDiscoverMessages(prev => ({
+          ...prev,
+          [product.id]: { type: 'success', text: `Added ${addedCount} competitor${addedCount === 1 ? '' : 's'} automatically${suffix}.` },
+        }))
+      } else if (addFailures > 0) {
+        setDiscoverMessages(prev => ({
+          ...prev,
+          [product.id]: { type: 'error', text: 'Candidates were found, but none could be added. Please add a competitor URL manually.' },
+        }))
+      } else {
+        setDiscoverMessages(prev => ({
+          ...prev,
+          [product.id]: { type: 'info', text: 'No new competitors to add for this product.' },
+        }))
+      }
     } catch (error) {
       console.log('[competitors/discover] unexpected failure', {
         productId: product.id,
         error: String(error),
       })
+
+      const isNetworkError = error instanceof TypeError
+      setDiscoverMessages(prev => ({
+        ...prev,
+        [product.id]: {
+          type: 'error',
+          text: isNetworkError
+            ? 'Network error while searching competitors. Check your connection and try again.'
+            : 'Unexpected error while searching competitors. Please try again.',
+        },
+      }))
     } finally {
       setDiscoveringCompetitorIds(prev => {
         const next = { ...prev }
@@ -468,6 +544,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       })
     }
   }
+
 
   const handleCompetitorUpdated = (productId: string, competitor: CompetitorUrl) => {
     const previous = products
@@ -766,6 +843,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       onAddCompetitor={() => setAddCompetitorFor(product.id)}
                       onFindCompetitors={() => handleDiscoverCompetitors(product)}
                       discoveringCompetitors={!!discoveringCompetitorIds[product.id]}
+                      discoverMessage={discoverMessages[product.id] ?? null}
                       onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                       onRefreshCompetitor={triggerBackgroundFetch}
                       onCurrencyUpdated={handleProductCurrencyUpdated}
@@ -870,6 +948,13 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                               : null
                             const cheaper = priceWithVat !== null && productPrice !== null && priceWithVat < productPrice
                             const currency = normalizeCurrencyCode(comp.last_price_currency ?? product.currency_code ?? 'USD')
+                            const stockStatus = comp.last_stock_status ?? 'unknown'
+                            const stockLabel = stockStatus === 'in_stock' ? 'In stock' : stockStatus === 'out_of_stock' ? 'Out of stock' : 'Stock unknown'
+                            const stockClass = stockStatus === 'in_stock'
+                              ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
+                              : stockStatus === 'out_of_stock'
+                                ? 'text-rose-700 bg-rose-100 border-rose-200'
+                                : 'text-gray-600 bg-gray-100 border-gray-200'
 
                             return (
                               <div key={comp.id} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
@@ -893,9 +978,19 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                                     <div className={`text-[10px] font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
                                       {cheaper ? 'CHEAPER' : 'HIGHER'}
                                     </div>
+                                    <div className="mt-1">
+                                      <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stockClass}`}>
+                                        {stockLabel}
+                                      </span>
+                                    </div>
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-gray-400 shrink-0">No price yet</span>
+                                  <div className="text-right shrink-0">
+                                    <span className="text-xs text-gray-400 block">No price yet</span>
+                                    <span className={`mt-1 inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stockClass}`}>
+                                      {stockLabel}
+                                    </span>
+                                  </div>
                                 )}
                               </div>
                             )
