@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import ProductCard from '@/components/ProductCard'
 import AddCompetitorModal from '@/components/AddCompetitorModal'
 import AddProductModal from '@/components/AddProductModal'
+import CompetitorSelectionModal from '@/components/CompetitorSelectionModal'
 import AlertBadge from '@/components/AlertBadge'
 import VatCountrySelector, { detectCountryCode, VAT_COUNTRIES } from '@/components/VatCountrySelector'
 import { formatMoney, normalizeCurrencyCode } from '@/lib/currency'
@@ -17,13 +18,6 @@ interface ScrapedCandidate {
   price: number
   currency: string
   confidence?: number
-}
-
-interface DiscoveredCompetitor {
-  url: string
-  label: string
-  price: number | null
-  currency: string | null
 }
 
 type DiscoverMessage = { type: 'success' | 'error' | 'info'; text: string }
@@ -57,6 +51,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [editingCompetitor, setEditingCompetitor] = useState<{ productId: string; competitor: CompetitorUrl } | null>(null)
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [competitorSelectionFor, setCompetitorSelectionFor] = useState<Product | null>(null)
 
   const [vatCountryCode, setVatCountryCode] = useState<string>('SE')
   const [vatRate, setVatRate] = useState<number>(25)
@@ -69,8 +64,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [draggingProductId, setDraggingProductId] = useState<string | null>(null)
 
   const [fetchingIds, setFetchingIds] = useState<Record<string, boolean>>({})
-  const [discoveringCompetitorIds, setDiscoveringCompetitorIds] = useState<Record<string, boolean>>({})
-  const [discoverMessages, setDiscoverMessages] = useState<Record<string, DiscoverMessage | null>>({})
+  const [discoveringCompetitorIds] = useState<Record<string, boolean>>({})
+  const [discoverMessages] = useState<Record<string, DiscoverMessage | null>>({})
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
   const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
   const [decimalShifts, setDecimalShifts] = useState<Record<string, number>>({})
@@ -387,162 +382,12 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     triggerBackgroundFetch(competitor.id)
   }
 
-  const handleDiscoverCompetitors = async (product: Product) => {
-    const competitors = product.competitor_urls ?? []
-    if (limits.competitors !== Infinity && competitors.length >= limits.competitors) {
-      setDiscoverMessages(prev => ({
-        ...prev,
-        [product.id]: { type: 'error', text: `Competitor limit reached (${limits.competitors}). Remove one and try again.` },
-      }))
-      return
-    }
+  const handleDiscoverCompetitors = (product: Product) => {
+    setCompetitorSelectionFor(product)
+  }
 
-    setDiscoverMessages(prev => ({ ...prev, [product.id]: null }))
-    setDiscoveringCompetitorIds(prev => ({ ...prev, [product.id]: true }))
-
-    try {
-      const discoverRes = await fetch('/api/competitors/discover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          productId: product.id, 
-          title: product.title, 
-          currency: product.currency_code ?? 'USD',
-          limit: 3 
-        }),
-      })
-
-      let discoverData: any = null
-      try {
-        discoverData = await discoverRes.json()
-      } catch {
-        discoverData = null
-      }
-
-      if (!discoverRes.ok) {
-        const errorText = discoverData?.error ?? 'Unknown error'
-        const statusMessage = discoverRes.status === 400
-          ? 'Could not search for competitors because product details are incomplete.'
-          : discoverRes.status === 401
-            ? 'Your session expired. Please refresh and sign in again.'
-            : discoverRes.status === 404
-              ? 'This product could not be found. Refresh the page and try again.'
-              : discoverRes.status === 429
-                ? 'Too many discovery requests right now. Please wait a moment and retry.'
-                : discoverRes.status >= 500
-                  ? 'Server error while finding competitors. Please try again shortly.'
-                  : `Could not find competitors: ${errorText}`
-
-        console.log('[competitors/discover] request failed', {
-          productId: product.id,
-          status: discoverRes.status,
-          error: errorText,
-        })
-
-        setDiscoverMessages(prev => ({
-          ...prev,
-          [product.id]: { type: 'error', text: statusMessage },
-        }))
-        return
-      }
-
-      const candidates: DiscoveredCompetitor[] = Array.isArray(discoverData?.candidates) 
-        ? discoverData.candidates 
-        : []
-      
-      console.log('[competitors/discover] candidates discovered', {
-        productId: product.id,
-        discoveredCount: candidates.length,
-      })
-
-      if (candidates.length === 0) {
-        setDiscoverMessages(prev => ({
-          ...prev,
-          [product.id]: {
-            type: 'info',
-            text: 'No matching competitors were found. Try adding one manually or editing the product title to be more specific.',
-          },
-        }))
-        return
-      }
-
-      // Auto-add the best candidates (cheapest with stock)
-      let addedCount = 0
-      let addFailures = 0
-      for (const candidate of candidates) {
-        const currentCompetitorCount = competitors.length + addedCount
-        if (limits.competitors !== Infinity && currentCompetitorCount >= limits.competitors) break
-
-        const addRes = await fetch('/api/competitors/add', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            productId: product.id,
-            url: candidate.url,
-            label: candidate.label ?? null,
-            initialPrice: candidate.price,
-            initialCurrency: candidate.currency,
-          }),
-        })
-
-        const addData = await addRes.json()
-        if (!addRes.ok) {
-          addFailures += 1
-          console.log('[competitors/discover] add failed', {
-            productId: product.id,
-            url: candidate.url,
-            status: addRes.status,
-            error: addData?.error ?? 'Unknown error',
-          })
-          continue
-        }
-
-        if (addData?.competitor) {
-          addedCount += 1
-          handleCompetitorAdded(product.id, addData.competitor)
-        }
-      }
-
-      if (addedCount > 0) {
-        const suffix = addFailures > 0 ? ` (${addFailures} skipped due to errors)` : ''
-        setDiscoverMessages(prev => ({
-          ...prev,
-          [product.id]: { type: 'success', text: `Added ${addedCount} competitor${addedCount === 1 ? '' : 's'} automatically${suffix}.` },
-        }))
-      } else if (addFailures > 0) {
-        setDiscoverMessages(prev => ({
-          ...prev,
-          [product.id]: { type: 'error', text: 'Candidates were found, but none could be added. Please add a competitor URL manually.' },
-        }))
-      } else {
-        setDiscoverMessages(prev => ({
-          ...prev,
-          [product.id]: { type: 'info', text: 'No new competitors to add for this product.' },
-        }))
-      }
-    } catch (error) {
-      console.log('[competitors/discover] unexpected failure', {
-        productId: product.id,
-        error: String(error),
-      })
-
-      const isNetworkError = error instanceof TypeError
-      setDiscoverMessages(prev => ({
-        ...prev,
-        [product.id]: {
-          type: 'error',
-          text: isNetworkError
-            ? 'Network error while searching competitors. Check your connection and try again.'
-            : 'Unexpected error while searching competitors. Please try again.',
-        },
-      }))
-    } finally {
-      setDiscoveringCompetitorIds(prev => {
-        const next = { ...prev }
-        delete next[product.id]
-        return next
-      })
-    }
+  const handleCompetitorsAdded = (_productId: string, _count: number) => {
+    window.location.reload()
   }
 
 
@@ -1047,6 +892,18 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           onClose={() => setEditingProduct(null)}
           onAdded={() => {}}
           onUpdated={handleProductUpdated}
+        />
+      )}
+      {competitorSelectionFor && (
+        <CompetitorSelectionModal
+          productId={competitorSelectionFor.id}
+          productTitle={competitorSelectionFor.title}
+          productCurrency={competitorSelectionFor.currency_code ?? 'USD'}
+          onClose={() => setCompetitorSelectionFor(null)}
+          onCompetitorsAdded={(count) => {
+            handleCompetitorsAdded(competitorSelectionFor.id, count)
+            setCompetitorSelectionFor(null)
+          }}
         />
       )}
     </div>
