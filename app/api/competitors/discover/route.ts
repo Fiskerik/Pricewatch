@@ -179,13 +179,13 @@ export async function POST(req: NextRequest) {
       })
     } catch (error) {
       console.log('[competitors/discover] scrape failed', { url: candidate.url, error: String(error) })
-      // Still add it but with low confidence
+      // Still add it with unknown stock so users can review manually.
       enrichedCandidates.push({
         url: candidate.url,
         label: candidate.label,
         price: null,
         currency: null,
-        inStock: false,
+        inStock: true,
         confidence: 0.2,
       })
     }
@@ -211,6 +211,20 @@ export async function POST(req: NextRequest) {
       return b.confidence - a.confidence
     })
     .slice(0, limit)
+
+  console.log('[competitors/discover] ranked candidates', {
+    productId,
+    requestedTitle: title,
+    scrapedCount: enrichedCandidates.length,
+    returnedCount: filtered.length,
+    returned: filtered.map((candidate) => ({
+      label: candidate.label,
+      url: candidate.url,
+      price: candidate.price,
+      currency: candidate.currency,
+      confidence: candidate.confidence,
+    })),
+  })
 
   return NextResponse.json({ candidates: filtered })
 }

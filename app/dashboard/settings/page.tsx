@@ -22,7 +22,11 @@ interface MockCompetitor {
   last_price_currency: string | null
   products: {
     id: string
-    title: string
+    title: string | null
+    store_id: string
+  } | {
+    id: string
+    title: string | null
     store_id: string
   }[] | null
 }
@@ -72,11 +76,17 @@ function SettingsContent() {
         if (competitorError) {
           setMockMessage({ type: 'error', text: 'Could not load competitors for testing.' })
         } else {
-          const list = ((competitors || []) as MockCompetitor[]).map(item => ({
-            ...item,
-            products: Array.isArray(item.products) ? item.products : [],
-          }))
+          const list = ((competitors || []) as MockCompetitor[])
           setMockCompetitors(list)
+          console.log('[settings/mock] competitors loaded', {
+            count: list.length,
+            sample: list.slice(0, 3).map((item) => ({
+              id: item.id,
+              label: item.label,
+              hasArrayProducts: Array.isArray(item.products),
+              productTitle: Array.isArray(item.products) ? item.products[0]?.title : item.products?.title,
+            })),
+          })
           if (list.length > 0) setSelectedCompetitorId(list[0].id)
         }
       }
@@ -204,6 +214,18 @@ function SettingsContent() {
   const connectedStores = stores.filter(s => s.shop_domain)
   const selectedCompetitor = mockCompetitors.find(c => c.id === selectedCompetitorId) ?? null
 
+  const getMockCompetitorProductTitle = (competitor: MockCompetitor) => {
+    if (Array.isArray(competitor.products)) {
+      return competitor.products[0]?.title?.trim() || null
+    }
+
+    if (competitor.products && typeof competitor.products === 'object') {
+      return competitor.products.title?.trim() || null
+    }
+
+    return null
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -329,7 +351,7 @@ function SettingsContent() {
                 >
                   {mockCompetitors.map(comp => (
                     <option key={comp.id} value={comp.id}>
-                      {comp.products?.[0]?.title ?? 'Untitled product'} · {comp.label ?? comp.url}
+                      {getMockCompetitorProductTitle(comp) ?? comp.label ?? comp.url} · {comp.label ?? comp.url}
                     </option>
                   ))}
                 </select>
