@@ -7,6 +7,17 @@ import { supabaseAdmin } from '@/lib/supabase'
 export async function POST(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
   const { data: { user } } = await supabase.auth.getUser()
+  const lastChecked = (competitor as any).last_checked_at
+  if (lastChecked) {
+    const minutesSince = (Date.now() - new Date(lastChecked).getTime()) / 60000
+    const cooldownMinutes = plan === 'free' ? 60 : plan === 'pro' ? 30 : 10
+    if (minutesSince < cooldownMinutes) {
+      return NextResponse.json({ 
+        error: `Please wait ${Math.ceil(cooldownMinutes - minutesSince)} more minutes before refreshing.` 
+      }, { status: 429 })
+    }
+  }
+  
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { competitorId, preferredMetric } = await req.json()
