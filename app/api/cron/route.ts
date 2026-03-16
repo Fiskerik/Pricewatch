@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
           id, url, label, last_price, last_price_currency, selected_price_metric, mock_next_price, mock_price_enabled,
           last_stock_status,
           products (
-            id, title, our_price, currency_code,
+            id, title, our_price, currency_code, map_floor_price, map_enabled,
             stores (
               id, plan,
               auth_users:user_id (email)
