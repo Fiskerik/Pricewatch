@@ -24,6 +24,11 @@ export interface Product {
   competitor_urls?: CompetitorUrl[]
   map_floor_price?: number | null
   map_enabled?: boolean | null
+  auto_price_enabled?: boolean | null
+  auto_price_undercut_type?: 'percent' | 'fixed' | null
+  auto_price_undercut_value?: number | null
+  auto_price_suggested?: number | null
+  auto_price_suggested_at?: string | null
 }
 
 export interface CompetitorUrl {
