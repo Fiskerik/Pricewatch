@@ -294,6 +294,16 @@ export default function ProductCard({
             <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${marketPositionStyle}`}>
               Market position: {marketPositionLabel}
             </span>
+            {product.map_enabled && (
+              <span className="inline-flex items-center rounded-md border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                MAP flooring active
+              </span>
+            )}
+            {product.auto_price_enabled && (
+              <span className="inline-flex items-center rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
+                Auto-adjust active
+              </span>
+            )}
           </div>
         </div>
         <div className="hidden sm:flex items-center gap-2 shrink-0">
@@ -327,6 +337,20 @@ export default function ProductCard({
 
       {isExpanded && (
         <div className="border-t border-gray-100 px-3 pb-3 pt-3 space-y-2">
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+            <span className="text-xs font-semibold text-gray-600">Display currency</span>
+            <select
+              value={normalizeCurrencyCode(productCurrency)}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation()
+                handleCurrencyChange(e.target.value)
+              }}
+              className="text-xs rounded-md border border-gray-300 px-2 py-1 bg-white"
+            >
+              {SUPPORTED_CURRENCIES.map(code => <option key={code} value={code}>{code}</option>)}
+            </select>
+          </div>
           {competitors.length === 0 && (
             <p className="text-sm text-gray-400 py-2">No competitors added yet.</p>
           )}

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { User } from '@supabase/supabase-js'
+import Link from 'next/link'
 import { Store, Product, CompetitorUrl, PLAN_LIMITS } from '@/types'
 import Sidebar from '@/components/Sidebar'
 import ProductCard from '@/components/ProductCard'
@@ -929,7 +930,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         {limits.products !== Infinity && products.length >= limits.products && (
           <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
             <p className="text-sm text-purple-700 font-medium">You have reached your {plan} plan limit of {limits.products} products.</p>
-            <button className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors">Upgrade Plan</button>
+            <Link href="/dashboard/upgrade" className="inline-block bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors">Upgrade Plan</Link>
           </div>
         )}
       </main>

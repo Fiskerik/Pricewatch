@@ -55,7 +55,8 @@ export async function POST(req: NextRequest) {
       oldPrice,
       newPrice: parsedNewPrice,
       ourPrice: (competitor as any)?.products?.our_price ?? 0,
-      currency: (competitor as any)?.last_price_currency ?? 'USD',
+      currency: (competitor as any)?.last_price_currency ?? (competitor as any)?.products?.currency_code ?? 'USD',
+      ourPriceCurrency: (competitor as any)?.products?.currency_code ?? 'USD',
     })
 
     if (sendResult.skipped) {
