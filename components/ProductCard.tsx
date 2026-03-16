@@ -449,7 +449,7 @@ export default function ProductCard({
                           className="w-8 h-8 rounded-md border border-gray-200 text-gray-500 hover:text-black hover:border-gray-400 transition-colors text-sm"
                           title="Edit competitor"
                         >✏️</button>
-                        
+                        <a
                           href={comp.url}
                           target="_blank"
                           rel="noopener noreferrer"
