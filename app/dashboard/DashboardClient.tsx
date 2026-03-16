@@ -199,11 +199,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     
     for (const product of products) {
       // 1. Check for MAP violations first
-      const hasMapViolation = product.map_enabled && (product.competitor_urls ?? []).some(c => 
-        c.last_price !== null && 
-        product.map_floor_price !== null && 
-        c.last_price < product.map_floor_price
-      )
+      const hasMapViolation = product.map_enabled === true &&
+        product.map_floor_price != null &&
+        (product.competitor_urls ?? []).some(c =>
+          c.last_price !== null && c.last_price < product.map_floor_price!
+        )
       
       if (hasMapViolation) {
         map[product.id] = 'map_violation'
