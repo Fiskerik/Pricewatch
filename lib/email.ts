@@ -28,6 +28,7 @@ export interface StockAlertParams {
   newStatus: 'in_stock' | 'out_of_stock'
 }
 
+
 function fmtPrice(amount: number, currency = 'USD') {
   try {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount)
@@ -192,4 +193,74 @@ export async function sendStockAlert(params: StockAlertParams): Promise<EmailSen
     from,
     subject,
   }
+}
+
+export interface MapViolationAlertParams {
+  to: string
+  productTitle: string
+  competitorLabel: string
+  competitorUrl: string
+  competitorPrice: number
+  mapFloorPrice: number
+  currency?: string
+}
+
+export async function sendMapViolationAlert(params: MapViolationAlertParams): Promise<EmailSendDebug> {
+  const { to, productTitle, competitorLabel, competitorUrl, competitorPrice, mapFloorPrice, currency = 'USD' } = params
+  
+  const gap = mapFloorPrice - competitorPrice
+  const gapPct = ((gap / mapFloorPrice) * 100).toFixed(1)
+  
+  let hostname = competitorUrl
+  try { hostname = new URL(competitorUrl).hostname } catch { /* keep raw */ }
+  const name = competitorLabel || hostname
+  
+  const subject = `MAP violation: ${name} is advertising ${productTitle} at ${fmtPrice(competitorPrice, currency)} (floor: ${fmtPrice(mapFloorPrice, currency)})`
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:32px 12px;background:#f4f4f5;font-family:Inter,system-ui,sans-serif;color:#18181b">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
+  <div style="background:#dc2626;padding:24px 28px">
+    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">PriceWatch · MAP Alert</div>
+    <div style="font-size:24px;line-height:1.25;font-weight:800;color:#fff;margin:0">MAP Policy Violation</div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.86);margin-top:6px">
+      <strong>${name}</strong> is advertising <strong>${productTitle}</strong> below your MAP floor.
+    </div>
+  </div>
+  <div style="padding:24px 28px">
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+      <tr>
+        <td width="48%" style="background:#fef2f2;border:2px solid #fca5a5;border-radius:12px;padding:16px;text-align:center">
+          <div style="font-size:11px;color:#71717a;font-weight:600;margin-bottom:6px;text-transform:uppercase">Advertised Price</div>
+          <div style="font-size:26px;font-weight:800;color:#dc2626">${fmtPrice(competitorPrice, currency)}</div>
+        </td>
+        <td width="4%" style="text-align:center;font-size:20px;color:#dc2626;font-weight:800">vs</td>
+        <td width="48%" style="background:#f4f4f5;border-radius:12px;padding:16px;text-align:center">
+          <div style="font-size:11px;color:#71717a;font-weight:600;margin-bottom:6px;text-transform:uppercase">MAP Floor</div>
+          <div style="font-size:26px;font-weight:700;color:#6b7280">${fmtPrice(mapFloorPrice, currency)}</div>
+        </td>
+      </tr>
+    </table>
+    <div style="background:#fef2f2;border-radius:10px;padding:12px 16px;font-size:13px;color:#52525b;margin-bottom:22px">
+      <strong>${fmtPrice(gap, currency)} (${gapPct}%) below MAP floor.</strong> This may affect other resellers and your brand's price integrity.
+    </div>
+    <a href="${competitorUrl}" style="display:block;background:#dc2626;color:#fff;text-align:center;padding:14px 20px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px">
+      View on ${name} &rarr;
+    </a>
+  </div>
+</div>
+</body></html>`
+
+  const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
+  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+
+  if (!apiKey) {
+    return { skipped: true, reason: 'missing_resend_api_key', provider: 'resend', messageId: null, to, from, subject }
+  }
+
+  const { Resend } = await import('resend')
+  const resend = new Resend(apiKey)
+  const result = await resend.emails.send({ from, to, subject, html })
+  if (result?.error) throw new Error(`Resend send failed: ${result.error.message}`)
+  return { skipped: false, provider: 'resend', messageId: result?.data?.id ?? null, to, from, subject }
 }
