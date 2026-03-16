@@ -19,6 +19,16 @@ export interface EmailSendDebug {
   subject: string
 }
 
+export interface AutoPriceSuggestionParams {
+  to: string
+  productTitle: string
+  currentPrice: number
+  suggestedPrice: number
+  lowestCompetitorPrice: number
+  currency?: string
+  applied?: boolean  // ← new
+}
+
 export interface StockAlertParams {
   to: string
   productTitle: string
