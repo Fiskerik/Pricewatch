@@ -93,7 +93,7 @@ interface ConvertedCurrencyResponse {
 
 interface Props {
   product: Product
-  marketPosition?: 'cheapest' | 'competitive' | 'overpriced' | 'no_data'
+  marketPosition?: 'cheapest' | 'competitive' | 'overpriced' | 'no_data' | 'map_violation'
   isExpanded: boolean
   onToggle: () => void
   onEditProduct: (product: Product) => void
