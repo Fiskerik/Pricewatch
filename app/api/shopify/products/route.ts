@@ -52,8 +52,9 @@ export async function GET(req: NextRequest) {
     const { products } = await shopifyResponse.json()
 
     // Transform to simpler format
-    const formattedProducts = (products || []).map((p: any) => ({
+   const formattedProducts = (products || []).map((p: any) => ({
       shopify_product_id: String(p.id),
+      shopify_variant_id: String(p.variants?.[0]?.id ?? ''),  // ← add
       title: p.title,
       handle: p.handle,
       image_url: p.images?.[0]?.src ?? null,
