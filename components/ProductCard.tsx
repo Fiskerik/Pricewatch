@@ -327,19 +327,6 @@ export default function ProductCard({
 
       {isExpanded && (
         <div className="border-t border-gray-100 px-3 pb-3 pt-3 space-y-2">
-          <div className="mt-2 flex items-center gap-2">
-            <label className="text-xs text-gray-700">
-              Currency <span className="text-[10px] text-amber-600 font-semibold">(💾 saved as origin)</span>:
-            </label>
-            <select
-              value={normalizeCurrencyCode(pending.currency)}
-              onChange={(e) => onPendingCurrencyChange(comp.id, e.target.value)}
-              className="text-xs border border-amber-300 rounded-md px-2 py-1 outline-none focus:border-amber-500 bg-white"
-            >
-              {SUPPORTED_CURRENCIES.map(code => <option key={code} value={code}>{code}</option>)}
-            </select>
-          </div>
-
           {competitors.length === 0 && (
             <p className="text-sm text-gray-400 py-2">No competitors added yet.</p>
           )}
