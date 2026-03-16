@@ -623,7 +623,7 @@ export function cleanUrl(rawUrl: string): string {
       const m = url.pathname.match(/\/listing\/\d+/)
       if (m) return `https://www.etsy.com${m[0]}`
     }
-    const TRACKING = ['utm_source', 'utm_medium', 'utm_campaign', 'fbclid', 'gclid', 'ref']
+    const TRACKING = ['utm_source', 'utm_medium', 'utm_campaign', 'fbclid', 'gclid', 'ref', 'msclkid', 'pjclid']
     TRACKING.forEach(p => url.searchParams.delete(p))
     return url.origin + url.pathname
   } catch {
