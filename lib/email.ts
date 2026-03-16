@@ -7,6 +7,7 @@ export interface PriceAlertParams {
   newPrice: number
   ourPrice: number
   currency?: string
+  ourPriceCurrency?: string
 }
 
 export interface EmailSendDebug {
@@ -48,7 +49,17 @@ function fmtPrice(amount: number, currency = 'USD') {
 }
 
 export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSendDebug> {
-  const { to, productTitle, competitorLabel, competitorUrl, oldPrice, newPrice, ourPrice, currency = 'USD' } = params
+  const {
+    to,
+    productTitle,
+    competitorLabel,
+    competitorUrl,
+    oldPrice,
+    newPrice,
+    ourPrice,
+    currency = 'USD',
+    ourPriceCurrency,
+  } = params
 
   const dropped = newPrice < oldPrice
   const diff = Math.abs(newPrice - oldPrice)
@@ -92,7 +103,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
     </table>
     <div style="background:#f9f9fb;border-radius:10px;padding:12px 16px;font-size:13px;color:#52525b;margin-bottom:22px;line-height:1.5">
       ${dropped ? '↓' : '↑'} <strong>${fmtPrice(diff, currency)}${pct === 'N/A' ? '' : ` (${pct}%)`}</strong> ${dropped ? 'cheaper' : 'more expensive'} than before
-      ${ourPrice ? ` &nbsp;&middot;&nbsp; Your price: <strong>${fmtPrice(ourPrice, currency)}</strong>` : ''}
+      ${ourPrice ? ` &nbsp;&middot;&nbsp; Your price: <strong>${fmtPrice(ourPrice, ourPriceCurrency ?? currency)}</strong>` : ''}
     </div>
     <a href="${competitorUrl}" style="display:block;background:#111;color:#fff;text-align:center;padding:14px 20px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px">
       View on ${name} &rarr;

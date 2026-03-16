@@ -309,6 +309,8 @@ export async function GET(req: NextRequest) {
                 oldPrice,
                 newPrice: scrapeResult.price,
                 ourPrice: product.our_price ?? 0,
+                currency: scrapeResult.scrapedCurrency ?? product.currency_code ?? 'USD',
+                ourPriceCurrency: product.currency_code ?? 'USD',
               })
               await admin.from('alerts_sent').insert({
                 competitor_url_id: comp.id,
