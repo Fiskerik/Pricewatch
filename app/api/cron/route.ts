@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { scrapePrice } from '@/lib/scraper'
-import { sendPriceAlert, sendStockAlert } from '@/lib/email'
+import { sendPriceAlert, sendStockAlert, sendMapViolationAlert } from '@/lib/email'
 import { FailureReasonCode } from '@/lib/scraper/shared'
 
 const MAX_ENQUEUE_PER_RUN = 500
