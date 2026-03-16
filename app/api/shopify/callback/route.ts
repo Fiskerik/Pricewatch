@@ -60,6 +60,28 @@ export async function GET(req: NextRequest) {
       throw new Error('No access token received')
     }
 
+    // After getting access_token, verify what scopes were actually granted
+const accessInfoRes = await fetch(
+  `https://${shop}/admin/oauth/access_scopes.json`,
+  {
+    headers: { 'X-Shopify-Access-Token': access_token },
+  }
+)
+const accessInfo = await accessInfoRes.json()
+const grantedScopes = (accessInfo?.access_scopes ?? [])
+  .map((s: any) => s.handle)
+  .join(',')
+
+// Store scopes alongside the token
+await supabaseAdmin()
+  .from('stores')
+  .update({
+    access_token,
+    shopify_scopes: grantedScopes,
+    store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
+  })
+  .eq('id', existingStore.id)
+
     // Check if this store is already connected
     const { data: existingStore } = await supabaseAdmin()
       .from('stores')
