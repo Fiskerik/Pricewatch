@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { scrapePrice } from '@/lib/scraper'
-import { sendPriceAlert, sendStockAlert, sendMapViolationAlert } from '@/lib/email'
+import { sendPriceAlert, sendStockAlert, sendMapViolationAlert, sendAutoPriceSuggestion } from '@/lib/email'
 import { FailureReasonCode } from '@/lib/scraper/shared'
 import { updateShopifyVariantPrice } from '@/lib/shopify'
 
@@ -130,14 +130,14 @@ export async function GET(req: NextRequest) {
           id, url, label, last_price, last_price_currency, selected_price_metric, mock_next_price, mock_price_enabled,
           last_stock_status,
           products (
-          id, title, our_price, currency_code, map_floor_price, map_enabled,
-          auto_price_enabled, auto_price_undercut_type, auto_price_undercut_value,
-          shopify_variant_id,
-          stores (
-            id, plan, shop_domain, access_token,
-            auth_users:user_id (email)
+            id, title, our_price, currency_code, map_floor_price, map_enabled,
+            auto_price_enabled, auto_price_undercut_type, auto_price_undercut_value,
+            shopify_variant_id,
+            stores (
+              id, plan, shop_domain, access_token,
+              auth_users:user_id (email)
+            )
           )
-        )
         )
       `)
       .in('status', ['queued', 'retrying'])
@@ -201,9 +201,10 @@ export async function GET(req: NextRequest) {
           : await scrapePrice(comp.url, product?.currency_code ?? 'USD', {
               preferredMetric: comp.selected_price_metric ?? null,
             })
+
         const savedDecimalShift = (comp as any).price_decimal_shift ?? 0
         const savedCurrencyOverride = (comp as any).price_currency_override ?? null
-        
+
         if (scrapeResult.price !== null && savedDecimalShift !== 0) {
           scrapeResult.price = scrapeResult.price / Math.pow(10, savedDecimalShift)
           scrapeResult.price = Math.round(scrapeResult.price * 1_000_000) / 1_000_000
@@ -211,23 +212,13 @@ export async function GET(req: NextRequest) {
         if (savedCurrencyOverride && scrapeResult.price !== null) {
           scrapeResult.scrapedCurrency = savedCurrencyOverride
         }
-        if (hasMockPrice) {
-          console.log('[cron] using mock override price', {
-            competitorId: comp.id,
-            mockPrice,
-          })
-        }
 
         await admin
           .from('competitor_urls')
           .update({
             last_checked_at: now,
             ...(hasMockPrice
-              ? {
-                  mock_next_price: null,
-                  mock_price_enabled: false,
-                  mock_set_at: null,
-                }
+              ? { mock_next_price: null, mock_price_enabled: false, mock_set_at: null }
               : {}),
           })
           .eq('id', comp.id)
@@ -267,10 +258,7 @@ export async function GET(req: NextRequest) {
         if (newStockStatus !== 'unknown' && oldStockStatus !== newStockStatus) {
           await admin
             .from('competitor_urls')
-            .update({
-              last_stock_status: newStockStatus,
-              last_stock_changed_at: now,
-            })
+            .update({ last_stock_status: newStockStatus, last_stock_changed_at: now })
             .eq('id', comp.id)
 
           if (userEmail && product?.title) {
@@ -283,7 +271,6 @@ export async function GET(req: NextRequest) {
                 previousStatus: oldStockStatus,
                 newStatus: newStockStatus,
               })
-
               await admin.from('alerts_sent').insert({
                 competitor_url_id: comp.id,
                 old_price: oldPrice,
@@ -312,14 +299,6 @@ export async function GET(req: NextRequest) {
           const mismatchReasons = Array.isArray(comp.mismatch_reasons) ? comp.mismatch_reasons : []
           const suppressAlert = confidence < 0.45 || mismatchReasons.length > 0
 
-          if (suppressAlert) {
-            console.log('[cron] alert suppressed due to potential mismatch', {
-              competitorId: comp.id,
-              confidence,
-              mismatchReasons,
-            })
-          }
-
           if (!suppressAlert && userEmail && product?.title) {
             try {
               await sendPriceAlert({
@@ -331,7 +310,6 @@ export async function GET(req: NextRequest) {
                 newPrice: scrapeResult.price,
                 ourPrice: product.our_price ?? 0,
               })
-
               await admin.from('alerts_sent').insert({
                 competitor_url_id: comp.id,
                 old_price: oldPrice,
@@ -361,42 +339,134 @@ export async function GET(req: NextRequest) {
           platform: scrapeResult.platform ?? null,
         }).eq('id', job.id)
 
-        // ── MAP violation check ──────────────────────────────────────────────────────
-const mapFloor = product?.map_floor_price ? parseFloat(String(product.map_floor_price)) : null
-const mapEnabled = product?.map_enabled === true
+        // ── MAP violation check ───────────────────────────────────────────────
+        const mapFloor = product?.map_floor_price ? parseFloat(String(product.map_floor_price)) : null
+        const mapEnabled = product?.map_enabled === true
 
-if (mapEnabled && mapFloor !== null && scrapeResult.price !== null && scrapeResult.price < mapFloor) {
-  console.log('[cron] MAP violation detected', {
-    competitorId: comp.id,
-    price: scrapeResult.price,
-    mapFloor,
-  })
+        if (mapEnabled && mapFloor !== null && scrapeResult.price !== null && scrapeResult.price < mapFloor) {
+          if (userEmail && product?.title) {
+            try {
+              await sendMapViolationAlert({
+                to: userEmail,
+                productTitle: product.title,
+                competitorLabel: comp.label ?? '',
+                competitorUrl: comp.url,
+                competitorPrice: scrapeResult.price,
+                mapFloorPrice: mapFloor,
+                currency: scrapeResult.scrapedCurrency ?? product.currency_code ?? 'USD',
+              })
+              await admin.from('alerts_sent').insert({
+                competitor_url_id: comp.id,
+                old_price: mapFloor,
+                new_price: scrapeResult.price,
+                alert_type: 'map_violation',
+              })
+            } catch (emailErr) {
+              results.errors.push(`MAP alert failed for ${comp.id}: ${String(emailErr)}`)
+            }
+          }
+        }
 
-  if (userEmail && product?.title) {
-    try {
-      await sendMapViolationAlert({
-        to: userEmail,
-        productTitle: product.title,
-        competitorLabel: comp.label ?? '',
-        competitorUrl: comp.url,
-        competitorPrice: scrapeResult.price,
-        mapFloorPrice: mapFloor,
-        currency: scrapeResult.scrapedCurrency ?? product.currency_code ?? 'USD',
-      })
+        // ── Auto-price execution (Pro/Business + Shopify connected) ──────────
+        const autoPriceEnabled = product?.auto_price_enabled === true
+        const undercutType = product?.auto_price_undercut_type as 'percent' | 'fixed' | null
+        const undercutValue = product?.auto_price_undercut_value
+          ? parseFloat(String(product.auto_price_undercut_value))
+          : null
+        const isPro = store?.plan === 'pro' || store?.plan === 'business'
+        const hasShopify = store?.shop_domain && store?.access_token && product?.shopify_variant_id
 
-      await admin.from('alerts_sent').insert({
-        competitor_url_id: comp.id,
-        old_price: mapFloor,     // using floor as reference
-        new_price: scrapeResult.price,
-        alert_type: 'map_violation',
-      })
-    } catch (emailErr) {
-      results.errors.push(`MAP alert failed for ${comp.id}: ${String(emailErr)}`)
-    }
-  }
-}
+        if (autoPriceEnabled && isPro && hasShopify && undercutType && undercutValue !== null) {
+          const { data: allComps } = await admin
+            .from('competitor_urls')
+            .select('last_price')
+            .eq('product_id', product.id)
+            .not('last_price', 'is', null)
 
-        
+          const prices = (allComps ?? [])
+            .map((c: any) => parseFloat(String(c.last_price)))
+            .filter((p: number) => Number.isFinite(p) && p > 0)
+
+          if (scrapeResult.price !== null) prices.push(scrapeResult.price)
+
+          if (prices.length > 0) {
+            const lowestCompetitor = Math.min(...prices)
+            const autoMapFloor = product?.map_floor_price
+              ? parseFloat(String(product.map_floor_price))
+              : null
+
+            let suggested: number
+            if (undercutType === 'percent') {
+              suggested = lowestCompetitor * (1 - undercutValue / 100)
+            } else {
+              suggested = lowestCompetitor - undercutValue
+            }
+            suggested = Math.round(suggested * 100) / 100
+
+            // Clamp to MAP floor
+            if (autoMapFloor !== null && suggested < autoMapFloor) {
+              suggested = autoMapFloor
+            }
+
+            const currentPrice = product?.our_price
+              ? parseFloat(String(product.our_price))
+              : null
+
+            const shouldReprice = suggested > 0 &&
+              (currentPrice === null || Math.abs(suggested - currentPrice) / currentPrice > 0.005)
+
+            if (shouldReprice) {
+              const updateResult = await updateShopifyVariantPrice(
+                store.shop_domain,
+                store.access_token,
+                product.shopify_variant_id,
+                suggested,
+              )
+
+              if (updateResult.success) {
+                await admin
+                  .from('products')
+                  .update({
+                    our_price: suggested,
+                    auto_price_applied: suggested,
+                    last_auto_priced_at: now,
+                  })
+                  .eq('id', product.id)
+
+                console.log('[cron] auto-price applied', {
+                  productId: product.id,
+                  oldPrice: currentPrice,
+                  newPrice: suggested,
+                  lowestCompetitor,
+                })
+
+                if (userEmail && product?.title) {
+                  try {
+                    await sendAutoPriceSuggestion({
+                      to: userEmail,
+                      productTitle: product.title,
+                      currentPrice: currentPrice ?? 0,
+                      suggestedPrice: suggested,
+                      lowestCompetitorPrice: lowestCompetitor,
+                      currency: product.currency_code ?? 'USD',
+                      applied: true,
+                    })
+                  } catch (emailErr) {
+                    results.errors.push(`Auto-price email failed for ${product.id}: ${String(emailErr)}`)
+                  }
+                }
+              } else {
+                console.error('[cron] auto-price Shopify update failed', {
+                  productId: product.id,
+                  variantId: product.shopify_variant_id,
+                  error: updateResult.error,
+                })
+                results.errors.push(`Auto-price failed for product ${product.id}: ${updateResult.error}`)
+              }
+            }
+          }
+        }
+
       } catch (err) {
         const errorText = String(err)
         const lowered = errorText.toLowerCase()
@@ -423,106 +493,4 @@ if (mapEnabled && mapFloor !== null && scrapeResult.price !== null && scrapeResu
   }
 
   return NextResponse.json({ success: true, timestamp: now, ...results })
-}
-
-// ── Auto-price execution (Pro/Business + Shopify connected) ───────────────
-const autoPriceEnabled = product?.auto_price_enabled === true
-const undercutType = product?.auto_price_undercut_type as 'percent' | 'fixed' | null
-const undercutValue = product?.auto_price_undercut_value
-  ? parseFloat(String(product.auto_price_undercut_value))
-  : null
-const isPro = store?.plan === 'pro' || store?.plan === 'business'
-const hasShopify = store?.shop_domain && store?.access_token && product?.shopify_variant_id
-
-if (autoPriceEnabled && isPro && hasShopify && undercutType && undercutValue !== null) {
-  const { data: allComps } = await admin
-    .from('competitor_urls')
-    .select('last_price')
-    .eq('product_id', product.id)
-    .not('last_price', 'is', null)
-
-  const prices = (allComps ?? [])
-    .map((c: any) => parseFloat(String(c.last_price)))
-    .filter((p: number) => Number.isFinite(p) && p > 0)
-
-  if (scrapeResult.price !== null) prices.push(scrapeResult.price)
-
-  if (prices.length > 0) {
-    const lowestCompetitor = Math.min(...prices)
-    const mapFloor = product?.map_floor_price
-      ? parseFloat(String(product.map_floor_price))
-      : null
-
-    let suggested: number
-    if (undercutType === 'percent') {
-      suggested = lowestCompetitor * (1 - undercutValue / 100)
-    } else {
-      suggested = lowestCompetitor - undercutValue
-    }
-    suggested = Math.round(suggested * 100) / 100
-
-    // Clamp to MAP floor
-    if (mapFloor !== null && suggested < mapFloor) {
-      suggested = mapFloor
-    }
-
-    // Only reprice if it's meaningfully different from current price
-    const currentPrice = product?.our_price
-      ? parseFloat(String(product.our_price))
-      : null
-
-    const shouldReprice = suggested > 0 &&
-      (currentPrice === null || Math.abs(suggested - currentPrice) / currentPrice > 0.005)
-
-    if (shouldReprice) {
-      const updateResult = await updateShopifyVariantPrice(
-        store.shop_domain,
-        store.access_token,
-        product.shopify_variant_id,
-        suggested,
-      )
-
-      if (updateResult.success) {
-        // Write the new price back to our DB too
-        await admin
-          .from('products')
-          .update({
-            our_price: suggested,
-            auto_price_applied: suggested,
-            last_auto_priced_at: now,
-          })
-          .eq('id', product.id)
-
-        console.log('[cron] auto-price applied', {
-          productId: product.id,
-          oldPrice: currentPrice,
-          newPrice: suggested,
-          lowestCompetitor,
-        })
-
-        if (userEmail && product?.title) {
-          try {
-            await sendAutoPriceSuggestion({
-              to: userEmail,
-              productTitle: product.title,
-              currentPrice: currentPrice ?? 0,
-              suggestedPrice: suggested,
-              lowestCompetitorPrice: lowestCompetitor,
-              currency: product.currency_code ?? 'USD',
-              applied: true,  // tells the email it was actually applied
-            })
-          } catch (emailErr) {
-            results.errors.push(`Auto-price email failed for ${product.id}: ${String(emailErr)}`)
-          }
-        }
-      } else {
-        console.error('[cron] auto-price Shopify update failed', {
-          productId: product.id,
-          variantId: product.shopify_variant_id,
-          error: updateResult.error,
-        })
-        results.errors.push(`Auto-price failed for product ${product.id}: ${updateResult.error}`)
-      }
-    }
-  }
 }
