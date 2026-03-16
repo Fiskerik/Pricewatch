@@ -223,6 +223,15 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
 
   const selectedStore = stores.find(s => s.id === selectedStoreId)
   const isConnectedStore = selectedStore?.shop_domain != null
+  const floorPriceNumber = mapFloorPrice ? Number.parseFloat(mapFloorPrice) : null
+  const undercutValueNumber = autoPriceUndercutValue ? Number.parseFloat(autoPriceUndercutValue) : null
+  const showPercentRuleExample = autoPriceEnabled
+    && autoPriceUndercutType === 'percent'
+    && floorPriceNumber !== null
+    && Number.isFinite(floorPriceNumber)
+    && undercutValueNumber !== null
+    && Number.isFinite(undercutValueNumber)
+
 
   if (loadingStores) {
     return (
@@ -434,7 +443,8 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
               Enable Auto-adjust pricing
             </label>
             {autoPriceEnabled && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
                     Undercut type
@@ -463,6 +473,12 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
                   />
                 </div>
               </div>
+                {showPercentRuleExample && (
+                  <p className="text-[11px] text-gray-500">
+                    If competitor goes below current price, lower the price with {undercutValueNumber}% until MAP floor is reached ({floorPriceNumber.toFixed(2)} {currencyCode}).
+                  </p>
+                )}
+              </>
             )}
           </div>
 
