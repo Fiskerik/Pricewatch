@@ -8,6 +8,8 @@ import {
   ScrapedCandidate,
 } from '../shared'
 
+export type ExtractionMode = 'full' | 'structured-only'
+
 const PRICE_SELECTORS = [
   '[itemprop="price"]',
   'meta[property="product:price:amount"]',
@@ -28,7 +30,14 @@ const PRICE_SELECTORS = [
   'span.price', '.price',
 ]
 
-export async function extractGeneric(html: string, url: string, options?: ScrapePriceOptions): Promise<ExtractResult> {
+export async function extractGeneric(
+  html: string,
+  url: string,
+  options?: ScrapePriceOptions,
+  // structured-only: skip Cheerio CSS selectors, only run JSON-LD and meta tags.
+  // Use this for Tier 2 (plain fetch, no proxy) where the DOM isn't JS-rendered.
+  mode: ExtractionMode = 'full',
+): Promise<ExtractResult> {
   const candidates: ScrapedCandidate[] = []
 
   const addCandidate = (candidate: ScrapedCandidate | null) => {
@@ -88,6 +97,7 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     }
   }
 
+  // ── JSON-LD (runs in both modes) ─────────────────────────────────────────
   const jsonLdRe = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
   let m: RegExpExecArray | null
   while ((m = jsonLdRe.exec(html)) !== null) {
@@ -102,6 +112,7 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     }
   }
 
+  // ── Shopify embedded ProductJson (runs in both modes) ────────────────────
   const shopifyProductJsonRe = /<script[^>]+type="application\/json"[^>]*id="ProductJson[^"']*"[^>]*>([\s\S]*?)<\/script>/gi
   while ((m = shopifyProductJsonRe.exec(html)) !== null) {
     try {
@@ -123,7 +134,7 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     }
   }
 
-
+  // ── Amazon buy box (runs in both modes — present in server-rendered HTML) ─
   const amazonPriceCandidates = [
     {
       metric: 'amazon.buybox.corePrice',
@@ -147,7 +158,6 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     const fraction = candidate.fraction?.[1]?.replace(/[^\d]/g, '') ?? ''
     const amount = parsePriceText(fraction ? `${whole},${fraction}` : whole)
     if (!amount) continue
-
     const rawCurrency = candidate.currencyHint?.[1] ?? candidate.whole[0]
     addCandidate({
       metric: candidate.metric,
@@ -157,6 +167,7 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     })
   }
 
+  // ── Etsy-specific patterns (runs in both modes) ──────────────────────────
   const etsyBuyBoxMatch = html.match(/data-buy-box-region=\"price\"[\s\S]{0,800}?wt-text-title-larger[^>]*>\s*([^<]+)\s*</i)
   if (etsyBuyBoxMatch) {
     const amount = parsePriceText(etsyBuyBoxMatch[1])
@@ -196,6 +207,7 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     }
   }
 
+  // ── Meta tags (runs in both modes — server-rendered) ────────────────────
   const metaPrice = html.match(/<meta[^>]+(?:property|name)="(?:product:price:amount|og:price:amount|price)"[^>]+content="([^"]+)"/i)
   const metaCurr = html.match(/<meta[^>]+(?:property|name)="(?:product:price:currency|og:price:currency|currency)"[^>]+content="([^"]+)"/i)
   if (metaPrice) {
@@ -210,33 +222,40 @@ export async function extractGeneric(html: string, url: string, options?: Scrape
     }
   }
 
-  try {
-    const { load } = await import('cheerio')
-    const $ = load(html)
-    for (const selector of PRICE_SELECTORS) {
-      const el = $(selector).first()
-      const raw = el.attr('content') || el.attr('data-price') || el.text().trim()
-      if (raw && !isNonProductPrice(raw)) {
-        const amount = parsePriceText(raw)
-        if (amount) {
-          const indicatesStartingPrice = /(from|starting at|ab\s|från|fra\s|desde)/i.test(raw)
-          addCandidate({
-            metric: indicatesStartingPrice ? `selector:${selector}:from` : `selector:${selector}`,
-            source: `Selector (${selector})`,
-            price: amount,
-            currency: detectCurrency(raw, url),
-          })
+  // ── CSS selectors (full mode only — requires JS-rendered DOM) ───────────
+  // Skipped in structured-only mode because these selectors rely on
+  // client-side rendering. Running them against a plain server response
+  // yields wrong or missing elements.
+  if (mode === 'full') {
+    try {
+      const { load } = await import('cheerio')
+      const $ = load(html)
+      for (const selector of PRICE_SELECTORS) {
+        const el = $(selector).first()
+        const raw = el.attr('content') || el.attr('data-price') || el.text().trim()
+        if (raw && !isNonProductPrice(raw)) {
+          const amount = parsePriceText(raw)
+          if (amount) {
+            const indicatesStartingPrice = /(from|starting at|ab\s|från|fra\s|desde)/i.test(raw)
+            addCandidate({
+              metric: indicatesStartingPrice ? `selector:${selector}:from` : `selector:${selector}`,
+              source: `Selector (${selector})`,
+              price: amount,
+              currency: detectCurrency(raw, url),
+            })
+          }
         }
       }
+    } catch {
+      // ignore selector pass errors
     }
-  } catch {
-    // ignore selector pass errors
   }
 
   const picked = pickCandidate(candidates, options?.preferredMetric)
   if (picked.price !== null) {
     console.log('[scraper] picked html candidate', {
       url,
+      mode,
       preferredMetric: options?.preferredMetric ?? null,
       metricUsed: picked.metricUsed,
       matchedPreferred: picked.matchedPreferredMetric,
