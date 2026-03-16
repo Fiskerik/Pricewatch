@@ -33,7 +33,7 @@ interface PendingPrice {
 }
 type ViewMode = 'products' | 'competitors'
 type ProductLayout = 'list' | 'grid'
-type MarketPosition = 'cheapest' | 'competitive' | 'overpriced' | 'no_data'
+type MarketPosition = 'cheapest' | 'competitive' | 'overpriced' | 'no_data' | 'map_violation'
 
 interface Props {
   user: User
