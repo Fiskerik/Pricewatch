@@ -16,18 +16,13 @@ export async function GET(req: NextRequest) {
   const shop = url.searchParams.get('shop')
   const state = url.searchParams.get('state')
   const hmac = url.searchParams.get('hmac')
-  
+
   // Verify state (CSRF protection)
   const cookieState = req.cookies.get('shopify_oauth_state')?.value
-  console.log('[shopify/callback] OAuth state check', {
-    hasStateParam: Boolean(state),
-    hasCookieState: Boolean(cookieState),
-    shop,
-  })
   if (state !== cookieState) {
     return NextResponse.redirect(new URL('/dashboard?error=invalid_state', req.url))
   }
-  
+
   // Verify HMAC
   const params = new URLSearchParams(url.search)
   params.delete('hmac')
@@ -36,14 +31,14 @@ export async function GET(req: NextRequest) {
     .createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
     .update(message)
     .digest('hex')
-  
+
   if (hash !== hmac) {
     console.log('[shopify/callback] HMAC validation failed', { shop })
     return NextResponse.redirect(new URL('/dashboard?error=invalid_hmac', req.url))
   }
 
-  // Exchange code for access token
   try {
+    // 1. Exchange code for access token
     const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -55,34 +50,24 @@ export async function GET(req: NextRequest) {
     })
 
     const { access_token } = await tokenResponse.json()
+    if (!access_token) throw new Error('No access token received')
 
-    if (!access_token) {
-      throw new Error('No access token received')
+    // 2. Fetch granted scopes from Shopify
+    let grantedScopes = ''
+    try {
+      const accessInfoRes = await fetch(
+        `https://${shop}/admin/oauth/access_scopes.json`,
+        { headers: { 'X-Shopify-Access-Token': access_token } }
+      )
+      const accessInfo = await accessInfoRes.json()
+      grantedScopes = (accessInfo?.access_scopes ?? [])
+        .map((s: any) => s.handle)
+        .join(',')
+    } catch (scopeErr) {
+      console.warn('[shopify/callback] failed to fetch scopes', String(scopeErr))
     }
 
-    // After getting access_token, verify what scopes were actually granted
-const accessInfoRes = await fetch(
-  `https://${shop}/admin/oauth/access_scopes.json`,
-  {
-    headers: { 'X-Shopify-Access-Token': access_token },
-  }
-)
-const accessInfo = await accessInfoRes.json()
-const grantedScopes = (accessInfo?.access_scopes ?? [])
-  .map((s: any) => s.handle)
-  .join(',')
-
-// Store scopes alongside the token
-await supabaseAdmin()
-  .from('stores')
-  .update({
-    access_token,
-    shopify_scopes: grantedScopes,
-    store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
-  })
-  .eq('id', existingStore.id)
-
-    // Check if this store is already connected
+    // 3. Check if store already connected
     const { data: existingStore } = await supabaseAdmin()
       .from('stores')
       .select('id')
@@ -91,13 +76,13 @@ await supabaseAdmin()
       .single()
 
     let store
-    
+
     if (existingStore) {
-      // Update existing store
       const { data: updatedStore, error } = await supabaseAdmin()
         .from('stores')
-        .update({ 
-          access_token: access_token,
+        .update({
+          access_token,
+          shopify_scopes: grantedScopes,
           store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
         })
         .eq('id', existingStore.id)
@@ -107,7 +92,6 @@ await supabaseAdmin()
       if (error) throw new Error('Failed to update store')
       store = updatedStore
     } else {
-      // Check if user has any stores
       const { data: userStores } = await supabaseAdmin()
         .from('stores')
         .select('id')
@@ -115,15 +99,15 @@ await supabaseAdmin()
 
       const isFirstStore = !userStores || userStores.length === 0
 
-      // Create new store
       const { data: newStore, error } = await supabaseAdmin()
         .from('stores')
-        .insert({ 
+        .insert({
           user_id: user.id,
           shop_domain: shop,
-          access_token: access_token,
+          access_token,
+          shopify_scopes: grantedScopes,
           store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
-          is_primary: isFirstStore, // First store is primary
+          is_primary: isFirstStore,
         })
         .select()
         .single()
@@ -132,7 +116,7 @@ await supabaseAdmin()
       store = newStore
     }
 
-    // Fetch and sync products
+    // 4. Fetch and sync products
     const productsResponse = await fetch(
       `https://${shop}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images,variants`,
       {
@@ -145,7 +129,6 @@ await supabaseAdmin()
 
     const { products } = await productsResponse.json()
 
-    // Insert/update products
     for (const product of products || []) {
       const mainVariant = product.variants?.[0]
       await supabaseAdmin()
@@ -153,21 +136,19 @@ await supabaseAdmin()
         .upsert({
           store_id: store.id,
           shopify_product_id: String(product.id),
-          shopify_variant_id: String(product.variants?.[0]?.id ?? ''),  // ← add this
+          shopify_variant_id: String(mainVariant?.id ?? ''),
           title: product.title,
           handle: product.handle,
           image_url: product.images?.[0]?.src ?? null,
           our_price: mainVariant?.price ? parseFloat(mainVariant.price) : null,
-          currency_code: "USD",
+          currency_code: 'USD',
         }, {
-          onConflict: 'shopify_product_id,store_id'
+          onConflict: 'shopify_product_id,store_id',
         })
     }
 
-    // Clear state cookie
     const response = NextResponse.redirect(new URL('/dashboard/settings?connected=true', req.url))
     response.cookies.delete('shopify_oauth_state')
-    
     return response
   } catch (err) {
     console.error('Shopify callback error:', err)
