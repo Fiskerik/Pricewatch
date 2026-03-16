@@ -68,17 +68,17 @@ export default function LandingPage() {
           {[
             {
               name: 'Free', price: '$0', period: 'forever',
-              features: ['10 products', '3 competitors each', 'Daily price checks', 'Email alerts'],
+              features: ['5 products', '2 competitors each', 'Daily price checks', 'Email alerts'],
               cta: 'Get started', href: '/signup', highlight: false,
             },
             {
               name: 'Pro', price: '$15', period: 'per month',
-              features: ['50 products', '10 competitors each', 'Hourly price checks', 'Email alerts', 'Price history charts'],
+              features: ['25 products', '10 competitors each', 'Daily price checks', 'Email alerts', 'Price history charts'],
               cta: 'Start Pro free trial', href: '/signup?plan=pro', highlight: true,
             },
             {
               name: 'Business', price: '$39', period: 'per month',
-              features: ['Unlimited products', 'Unlimited competitors', 'Hourly price checks', 'Email + Slack alerts', 'Price history charts'],
+              features: ['Unlimited products', 'Unlimited competitors', 'Daily price checks', 'Email + Slack alerts', 'Price history charts'],
               cta: 'Start Business trial', href: '/signup?plan=business', highlight: false,
             },
           ].map(plan => (
