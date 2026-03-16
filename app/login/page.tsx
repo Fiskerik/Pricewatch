@@ -5,31 +5,61 @@ import Link from 'next/link'
 import Image from 'next/image'
 
 export default function LoginPage() {
-  const supabase = createClientComponentClient()
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+  const supabase = isSupabaseConfigured ? createClientComponentClient() : null
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!supabase) {
+      console.error('Login blocked: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+      setAuthError('Login is temporarily unavailable. Please contact support.')
+      return
+    }
+
     setLoading(true)
-    await supabase.auth.signInWithOtp({
+    setAuthError(null)
+    const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     })
+    if (error) {
+      console.error('Magic link login failed:', error.message)
+      setAuthError(error.message)
+      setLoading(false)
+      return
+    }
     setSent(true)
     setLoading(false)
   }
 
   const handleGoogleLogin = async () => {
+    if (!supabase) {
+      console.error('Google login blocked: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+      setAuthError('Google login is temporarily unavailable. Please contact support.')
+      return
+    }
+
     setGoogleLoading(true)
-    await supabase.auth.signInWithOAuth({
+    setAuthError(null)
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     })
+    if (error) {
+      console.error('Google login failed:', error.message)
+      setAuthError(error.message)
+      setGoogleLoading(false)
+      return
+    }
     setGoogleLoading(false)
   }
 
@@ -46,6 +76,11 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
+          {authError && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {authError}
+            </div>
+          )}
           {sent ? (
             <div className="text-center">
               <div className="text-4xl mb-4">📬</div>
@@ -67,7 +102,7 @@ export default function LoginPage() {
               </div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !isSupabaseConfigured}
                 className="w-full bg-black text-white font-bold py-2.5 rounded-lg text-sm hover:bg-gray-800 transition-colors disabled:opacity-50"
               >
                 {loading ? 'Sending...' : 'Send magic link'}
@@ -75,7 +110,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleGoogleLogin}
-                disabled={googleLoading}
+                disabled={googleLoading || !isSupabaseConfigured}
                 className="w-full border border-gray-200 text-gray-900 font-semibold py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 {googleLoading ? 'Redirecting...' : 'Sign in with Google'}
