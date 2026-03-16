@@ -12,6 +12,7 @@ interface Store {
   created_at: string
   plan: string | null
   stripe_customer_id?: string | null
+  shopify_scopes?: string | null
 }
 
 interface MockCompetitor {
@@ -39,7 +40,6 @@ function SettingsContent() {
   const [stores, setStores] = useState<Store[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
 
   const [mockCompetitors, setMockCompetitors] = useState<MockCompetitor[]>([])
@@ -78,15 +78,6 @@ function SettingsContent() {
         } else {
           const list = ((competitors || []) as MockCompetitor[])
           setMockCompetitors(list)
-          console.log('[settings/mock] competitors loaded', {
-            count: list.length,
-            sample: list.slice(0, 3).map((item) => ({
-              id: item.id,
-              label: item.label,
-              hasArrayProducts: Array.isArray(item.products),
-              productTitle: Array.isArray(item.products) ? item.products[0]?.title : item.products?.title,
-            })),
-          })
           if (list.length > 0) setSelectedCompetitorId(list[0].id)
         }
       }
@@ -106,7 +97,7 @@ function SettingsContent() {
     try {
       await supabase
         .from('stores')
-        .update({ shop_domain: null, access_token: null, store_name: null })
+        .update({ shop_domain: null, access_token: null, store_name: null, shopify_scopes: null })
         .eq('id', storeId)
         .eq('user_id', user.id)
 
@@ -218,11 +209,9 @@ function SettingsContent() {
     if (Array.isArray(competitor.products)) {
       return competitor.products[0]?.title?.trim() || null
     }
-
     if (competitor.products && typeof competitor.products === 'object') {
       return competitor.products.title?.trim() || null
     }
-
     return null
   }
 
@@ -304,14 +293,14 @@ function SettingsContent() {
           ) : (
             <div className="space-y-3">
               {connectedStores.map(store => {
-                const needsReauth = store.shopify_scopes && !store.shopify_scopes.includes('write_products')
-                
+                const needsReauth = store.shopify_scopes != null && !store.shopify_scopes.includes('write_products')
+
                 return (
                   <div key={store.id} className="border border-gray-200 rounded-xl p-4">
                     {needsReauth && (
                       <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 font-medium">
                         ⚠ Reconnect required to enable auto-pricing.{' '}
-                        
+                        <a
                           href={`/api/shopify/auth?shop=${store.shop_domain}`}
                           className="underline font-bold"
                         >
@@ -319,29 +308,33 @@ function SettingsContent() {
                         </a>
                       </div>
                     )}
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="text-sm font-semibold text-gray-900">{store.store_name || store.shop_domain}</div>
-                        {store.is_primary && (
-                          <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded">PRIMARY</span>
-                        )}
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="text-sm font-semibold text-gray-900">{store.store_name || store.shop_domain}</div>
+                          {store.is_primary && (
+                            <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded">PRIMARY</span>
+                          )}
+                          {store.shopify_scopes?.includes('write_products') && (
+                            <span className="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded">Auto-price enabled</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">{store.shop_domain}</div>
                       </div>
-                      <div className="text-xs text-gray-500">{store.shop_domain}</div>
-                    </div>
-                    <div className="flex gap-2">
-                      {!store.is_primary && (
-                        <button onClick={() => handleSetPrimary(store.id)} disabled={saving} className="text-xs font-semibold text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg hover:bg-purple-50 transition-colors disabled:opacity-50">
-                          Set Primary
+                      <div className="flex gap-2">
+                        {!store.is_primary && (
+                          <button onClick={() => handleSetPrimary(store.id)} disabled={saving} className="text-xs font-semibold text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg hover:bg-purple-50 transition-colors disabled:opacity-50">
+                            Set Primary
+                          </button>
+                        )}
+                        <button onClick={() => handleDisconnectStore(store.id)} disabled={saving} className="text-xs font-semibold text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50">
+                          {saving ? 'Disconnecting...' : 'Disconnect'}
                         </button>
-                      )}
-                      <button onClick={() => handleDisconnectStore(store.id)} disabled={saving} className="text-xs font-semibold text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50">
-                        {saving ? 'Disconnecting...' : 'Disconnect'}
-                      </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </section>
