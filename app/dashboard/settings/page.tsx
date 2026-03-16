@@ -303,8 +303,22 @@ function SettingsContent() {
             </div>
           ) : (
             <div className="space-y-3">
-              {connectedStores.map(store => (
-                <div key={store.id} className="border border-gray-200 rounded-xl p-4 hover:border-gray-300 transition-colors">
+              {connectedStores.map(store => {
+                const needsReauth = store.shopify_scopes && !store.shopify_scopes.includes('write_products')
+                
+                return (
+                  <div key={store.id} className="border border-gray-200 rounded-xl p-4">
+                    {needsReauth && (
+                      <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 font-medium">
+                        ⚠ Reconnect required to enable auto-pricing.{' '}
+                        
+                          href={`/api/shopify/auth?shop=${store.shop_domain}`}
+                          className="underline font-bold"
+                        >
+                          Reconnect now →
+                        </a>
+                      </div>
+                    )}
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
