@@ -1,646 +1,571 @@
-export type CurrencyCode = string
+import { extractBigcommerce, detectBigcommerce } from './extractors/bigcommerce'
+import { extractGeneric } from './extractors/generic'
+import { detectNextJs, scrapeNextJsDataApi } from './extractors/nextjs'
+import { extractMagento, detectMagento } from './extractors/magento'
+import { extractShopify, detectShopify } from './extractors/shopify'
+import { extractWoocommerce, detectWoocommerce } from './extractors/woocommerce'
+import {
+  dedupeCandidates,
+  detectDirectApiCandidates,
+  extractPriceFromDirectJson,
+  extractStockSignal,
+  isBotChallengePage,
+  FailureReasonCode,
+  pickCandidate,
+  ScrapePriceOptions,
+  ScrapeResult,
+  ScrapedCandidate,
+} from './shared'
 
-export interface ScrapedCandidate {
-  metric: string
-  source: string
-  price: number
-  currency: CurrencyCode
+type PlatformName = 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic'
+
+const SCRAPE_TOTAL_TIMEOUT_MS = 60_000
+
+// How long to allow for each tier before moving on
+const TIER1_TIMEOUT_MS = 8_000
+const TIER2_TIMEOUT_MS = 12_000
+
+// A high-confidence metric means it came from a direct API or structured data.
+// In these cases we can skip the expensive JS render entirely.
+const HIGH_CONFIDENCE_SOURCE_PATTERNS = [
+  'shopify direct api',
+  'shopify .js endpoint',
+  'shopify productjson',
+  'json-ld',
+  'etsy state',
+  'next.js data api',
+  'next.js __next_data__',
+  'amazon buy box',
+]
+
+function isHighConfidenceResult(metricUsed: string | null, source?: string): boolean {
+  if (!metricUsed) return false
+  const combined = `${metricUsed} ${source ?? ''}`.toLowerCase()
+  return HIGH_CONFIDENCE_SOURCE_PATTERNS.some(p => combined.includes(p))
 }
 
-export interface ExtractResult {
-  price: number | null
-  scrapedCurrency: CurrencyCode | null
-  candidates: ScrapedCandidate[]
-  matchedPreferredMetric: boolean
-  metricUsed: string | null
+function timeoutSignal(timeoutMs: number): AbortSignal {
+  const safeTimeout = Math.max(1_000, Math.trunc(timeoutMs))
+  return AbortSignal.timeout(safeTimeout)
 }
 
-export type FailureReasonCode = 'timeout' | 'blocked' | 'parse_fail' | 'no_candidate'
-
-interface CandidateScore {
-  metric: string
-  source: string
-  finalScore: number
-  reliabilityScore: number
-  penaltyScore: number
-  reliabilityReason: string
-  penaltyReasons: string[]
+function remainingMs(startedAt: number): number {
+  return SCRAPE_TOTAL_TIMEOUT_MS - (Date.now() - startedAt)
 }
 
-export interface ScrapeResult {
-  price: number | null
-  scrapedCurrency: CurrencyCode | null
-  method: 'direct' | 'js-render' | 'failed'
-  candidates: ScrapedCandidate[]
-  metricUsed: string | null
-  matchedPreferredMetric: boolean
-  error?: string
-  failureCode?: FailureReasonCode
-  platform?: 'shopify' | 'woocommerce' | 'magento' | 'bigcommerce' | 'generic' | 'unknown'
-  stockStatus: 'in_stock' | 'out_of_stock' | 'unknown'
-  stockSource: string | null
+// ── ScraperAPI renderer ──────────────────────────────────────────────────────
+async function renderWithScraperApi(url: string, timeoutMs: number, forceResidential = false): Promise<string> {
+  const key = process.env.SCRAPER_API_KEY
+  if (!key) throw new Error('SCRAPER_API_KEY missing')
+
+  const apiUrl = new URL('http://api.scraperapi.com')
+  apiUrl.searchParams.set('api_key', key)
+  apiUrl.searchParams.set('url', url)
+  apiUrl.searchParams.set('render', 'true')
+
+  // Use residential proxies either when forced or for known-blocked domains
+  const needsResidential = forceResidential || requiresResidentialProxy(url)
+  if (needsResidential) {
+    apiUrl.searchParams.set('residential', 'true')
+    console.log('[scraper] using residential proxy', { url })
+  } else {
+    apiUrl.searchParams.set('premium', 'true')
+  }
+
+  // Site-specific wait selectors for JS-heavy stores
+  const waitSelector = getWaitSelector(url)
+  if (waitSelector) apiUrl.searchParams.set('wait_for_selector', waitSelector)
+
+  const res = await fetch(apiUrl.toString(), { signal: timeoutSignal(timeoutMs) })
+  return res.text()
 }
 
-export interface ScrapePriceOptions {
-  preferredMetric?: string | null
+// ── Browserless renderer ─────────────────────────────────────────────────────
+async function renderWithBrowserless(url: string, timeoutMs: number): Promise<string> {
+  const key = process.env.BROWSERLESS_API_KEY
+  if (!key) throw new Error('BROWSERLESS_API_KEY missing')
+
+  const body = JSON.stringify({
+    url,
+    waitFor: 8000,
+    gotoOptions: {
+      waitUntil: 'networkidle0',
+      timeout: Math.max(10_000, Math.min(35_000, Math.trunc(timeoutMs - 3_000))),
+    },
+    setExtraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
+  })
+
+  const res = await fetch(`https://production-sfo.browserless.io/content?token=${key}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    signal: timeoutSignal(timeoutMs),
+  })
+  return res.text()
 }
 
-export interface StockSignalResult {
-  status: 'in_stock' | 'out_of_stock' | 'unknown'
-  source: string | null
-}
+// ── Domains that require residential proxies ─────────────────────────────────
+// These domains consistently block datacenter IPs. Using residential proxies
+// here prevents wasting credits on failed calls with silent 200 responses.
+const RESIDENTIAL_PROXY_DOMAINS = new Set([
+  // Major retailers
+  'amazon.com', 'amazon.co.uk', 'amazon.de', 'amazon.se', 'amazon.fr', 'amazon.it', 'amazon.es',
+  // Electronics
+  'zalando.com', 'zalando.se', 'zalando.no', 'zalando.dk', 'zalando.de', 'zalando.fi',
+  'elgiganten.se', 'elgiganten.dk',
+  'power.se', 'power.no', 'power.dk', 'power.fi',
+  'mediamarkt.se', 'mediamarkt.de', 'mediamarkt.nl',
+  // Fashion
+  'asos.com', 'boozt.com', 'nelly.com',
+])
 
-export interface DirectApiCandidate {
-  url: string
-  type: 'shopify_js' | 'shopify_json' | 'generic_json'
-}
-
-// ── Bot / challenge page detection ──────────────────────────────────────────
-// Detects Cloudflare, PerimeterX, DDoS-Guard and other challenge pages
-// that return HTTP 200 but serve no product content.
-export function isBotChallengePage(html: string): boolean {
-  if (!html || html.length < 100) return true
-
-  const lower = html.toLowerCase()
-
-  // Cloudflare challenges
-  if (lower.includes('cf-challenge-running')) return true
-  if (lower.includes('cf_chl_opt')) return true
-  if (lower.includes('__cf_chl_f_tk')) return true
-
-  // PerimeterX
-  if (lower.includes('px-captcha')) return true
-  if (lower.includes('_pxappid')) return true
-  if (lower.includes('human challenge')) return true
-
-  // DDoS-Guard
-  if (lower.includes('ddos-guard')) return true
-
-  // DataDome
-  if (lower.includes('datadome')) return true
-
-  // Akamai Bot Manager
-  if (lower.includes('akamai-bot-manager')) return true
-
-  // Common challenge page titles
-  if (/\<title[^>]*>\s*(just a moment|access denied|attention required|security check|checking your browser|please wait|bot check)/i.test(html)) return true
-
-  // Generic signals: JS-only page with no meaningful content
-  if (lower.includes('enable javascript') && html.length < 6000) return true
-  if (lower.includes('please enable cookies') && html.length < 6000) return true
-
-  // "Robot or human" pages
-  if (lower.includes('robot or human')) return true
-  if (lower.includes('are you a human')) return true
-
-  return false
-}
-
-// ── Direct API URL candidates ────────────────────────────────────────────────
-// Returns structured-data endpoints to try before falling back to JS rendering.
-// These endpoints return JSON with price data and require no proxy.
-export function detectDirectApiCandidates(url: string): DirectApiCandidate[] {
-  const candidates: DirectApiCandidate[] = []
-
+function requiresResidentialProxy(url: string): boolean {
   try {
-    const parsed = new URL(url)
-    const pathname = parsed.pathname
-
-    // Shopify: /products/slug → /products/slug.js and /products/slug.json
-    const shopifyMatch = pathname.match(/^(\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?products\/[^/?#]+)/i)
-    if (shopifyMatch) {
-      const base = `${parsed.origin}${shopifyMatch[1]}`
-      candidates.push({ url: `${base}.js`, type: 'shopify_js' })
-      candidates.push({ url: `${base}.json`, type: 'shopify_json' })
-    }
-
-    // Some stores expose /api/product or /api/products/slug
-    const genericProductMatch = pathname.match(/^(\/(?:product|item|p)\/[^/?#]+)/i)
-    if (genericProductMatch) {
-      const base = `${parsed.origin}${genericProductMatch[1]}`
-      candidates.push({ url: `${base}.json`, type: 'generic_json' })
-    }
+    const hostname = new URL(url).hostname.replace(/^www\./, '').toLowerCase()
+    return RESIDENTIAL_PROXY_DOMAINS.has(hostname)
   } catch {
-    // ignore malformed URLs
-  }
-
-  return candidates
-}
-
-// ── Extract price from a direct JSON API response ────────────────────────────
-export function extractPriceFromDirectJson(
-  data: any,
-  sourceUrl: string,
-  type: DirectApiCandidate['type'],
-  options?: ScrapePriceOptions
-): ExtractResult {
-  const candidates: ScrapedCandidate[] = []
-  const currency = detectCurrency('', sourceUrl)
-
-  // Shopify .js / .json — variants array with price in cents
-  if (type === 'shopify_js' || type === 'shopify_json') {
-    const variants = Array.isArray(data?.variants) ? data.variants : []
-    const shopifyCurrency = typeof data?.currency === 'string' ? data.currency : currency
-
-    variants.forEach((variant: any, index: number) => {
-      // Shopify stores price in cents as an integer
-      const raw = variant?.price
-      if (typeof raw !== 'number' || raw <= 0) return
-      const amount = Number.isInteger(raw) && raw > 100 ? raw / 100 : raw
-      candidates.push({
-        metric: `shopify.direct.variants[${index}].price`,
-        source: 'Shopify direct API',
-        price: amount,
-        currency: shopifyCurrency,
-      })
-    })
-
-    // Also check compare_at_price for the first variant as a data point
-    const firstVariant = variants[0]
-    if (firstVariant?.compare_at_price && typeof firstVariant.compare_at_price === 'number') {
-      const compareAt = Number.isInteger(firstVariant.compare_at_price) && firstVariant.compare_at_price > 100
-        ? firstVariant.compare_at_price / 100
-        : firstVariant.compare_at_price
-      if (compareAt > 0) {
-        candidates.push({
-          metric: 'shopify.direct.variants[0].compare_at_price',
-          source: 'Shopify direct API',
-          price: compareAt,
-          currency: shopifyCurrency,
-        })
-      }
-    }
-  }
-
-  // Generic JSON — walk top-level and common patterns
-  if (type === 'generic_json' && data && typeof data === 'object') {
-    walkJsonForPrices(data, 'generic', sourceUrl, (c) => candidates.push(c))
-  }
-
-  return pickCandidate(candidates, options?.preferredMetric)
-}
-
-// ── Generic JSON price walker (used by multiple extractors) ──────────────────
-const PRICE_KEY_RE = /^(price|currentprice|saleprice|regularprice|baseprice|offerprice|actualprice|nowprice|redprice|whiteprice|listprice|finalprice|sellingprice|displayprice|retailprice|msrp|lowprice)$/i
-
-export function walkJsonForPrices(
-  obj: any,
-  pathPrefix: string,
-  url: string,
-  addCandidate: (c: ScrapedCandidate) => void,
-  depth = 0,
-  maxDepth = 20,
-): void {
-  if (!obj || typeof obj !== 'object' || depth > maxDepth) return
-
-  if (Array.isArray(obj)) {
-    obj.forEach((item, i) => {
-      if (i > 20) return // limit array iteration
-      walkJsonForPrices(item, `${pathPrefix}[${i}]`, url, addCandidate, depth + 1, maxDepth)
-    })
-    return
-  }
-
-  for (const key of Object.keys(obj)) {
-    const val = obj[key]
-    const fullPath = `${pathPrefix}.${key}`
-
-    if (PRICE_KEY_RE.test(key)) {
-      // Direct numeric value
-      if (typeof val === 'number' && val > 0 && val < 10_000_000) {
-        addCandidate({
-          metric: fullPath,
-          source: 'JSON data walk',
-          price: val,
-          currency: detectCurrency('', url),
-        })
-      }
-      // Direct string value
-      else if (typeof val === 'string') {
-        const amount = parsePriceText(val)
-        if (amount) {
-          addCandidate({
-            metric: fullPath,
-            source: 'JSON data walk',
-            price: amount,
-            currency: detectCurrency(val, url),
-          })
-        }
-      }
-      // Price object: { value, formattedValue, currencyIso }
-      else if (val && typeof val === 'object' && !Array.isArray(val)) {
-        const priceObj = val
-        const objCurrency = priceObj.currencyIso ?? priceObj.currency ?? priceObj.currencyCode ?? detectCurrency('', url)
-
-        if (priceObj.formattedValue != null) {
-          const amount = parsePriceText(String(priceObj.formattedValue))
-          if (amount) {
-            addCandidate({
-              metric: `${fullPath}.formattedValue`,
-              source: 'JSON data walk',
-              price: amount,
-              currency: objCurrency,
-            })
-          }
-        }
-
-        if (typeof priceObj.value === 'number' && priceObj.value > 0) {
-          // Check for minor unit encoding (e.g. SEK 49900 = 499.00)
-          const isMinorUnit =
-            Number.isInteger(priceObj.value) &&
-            priceObj.value >= 1000 &&
-            typeof objCurrency === 'string' &&
-            ['SEK', 'NOK', 'DKK', 'JPY', 'HUF', 'CLP', 'KRW'].includes(objCurrency.toUpperCase())
-          const amount = isMinorUnit ? priceObj.value / 100 : priceObj.value
-          addCandidate({
-            metric: `${fullPath}.value`,
-            source: 'JSON data walk',
-            price: amount,
-            currency: objCurrency,
-          })
-        }
-
-        if (typeof priceObj.amount === 'number' && priceObj.amount > 0) {
-          addCandidate({
-            metric: `${fullPath}.amount`,
-            source: 'JSON data walk',
-            price: priceObj.amount,
-            currency: objCurrency,
-          })
-        }
-
-        if (typeof priceObj.amount === 'string') {
-          const amount = parsePriceText(priceObj.amount)
-          if (amount) {
-            addCandidate({
-              metric: `${fullPath}.amount`,
-              source: 'JSON data walk',
-              price: amount,
-              currency: objCurrency,
-            })
-          }
-        }
-      }
-    }
-
-    // Recurse into nested objects (but not into arrays of primitives)
-    if (val && typeof val === 'object') {
-      walkJsonForPrices(val, fullPath, url, addCandidate, depth + 1, maxDepth)
-    }
+    return false
   }
 }
 
-// ── Stock signal extraction ──────────────────────────────────────────────────
-
-const IN_STOCK_AVAILABILITY_TOKENS = [
-  'instock',
-  'in_stock',
-  'limitedavailability',
-  'preorder',
-  'pre-order',
-  'backorder',
+// ── Site-specific wait selectors for JS-heavy SPAs ───────────────────────────
+// These tell ScraperAPI to wait for a specific element before capturing HTML.
+// Only needed for a handful of known SPAs — not a general mechanism.
+const WAIT_SELECTOR_MAP: Array<{ test: (url: string) => boolean; selector: string }> = [
+  {
+    test: (u) => u.includes('etsy.com'),
+    selector: '.wt-text-title-03',
+  },
+  {
+    test: (u) => u.includes('hm.com'),
+    selector: '[data-testid="white-price"],[data-testid="price-value"],[class*="ProductPriceCurrent"]',
+  },
+  {
+    test: (u) => u.includes('kaufland.de'),
+    selector: '[itemprop="price"],meta[property="product:price:amount"],[data-testid*="price"]',
+  },
+  {
+    test: (u) => u.includes('swappie.com'),
+    selector: '[data-test*="price"],[data-testid*="price"],[itemprop="price"]',
+  },
 ]
 
-const OOS_AVAILABILITY_TOKENS = [
-  'outofstock',
-  'out_of_stock',
-  'soldout',
-  'sold_out',
-  'discontinued',
-  'unavailable',
-]
-
-const STOCK_TEXT_PATTERNS: Array<{ status: 'in_stock' | 'out_of_stock'; pattern: RegExp }> = [
-  { status: 'out_of_stock', pattern: /\b(out\s*of\s*stock|sold\s*out|currently\s+unavailable|not\s+available|temporarily\s+out\s+of\s+stock)\b/i },
-  { status: 'in_stock', pattern: /\bonly\s+\d+\s+left\s+in\s+stock\b/i },
-  { status: 'in_stock', pattern: /\b(in\s*stock|available\s+now|ready\s+to\s+ship|ships?\s+today|lagerstatus\s*:\s*i\s*lager|i\s*lager|finns\s*i\s*lager)\b/i },
-]
-
-function normalizeAvailability(raw: string): 'in_stock' | 'out_of_stock' | null {
-  const normalized = raw.toLowerCase().replace(/[^a-z_]/g, '')
-  if (IN_STOCK_AVAILABILITY_TOKENS.some(token => normalized.includes(token))) return 'in_stock'
-  if (OOS_AVAILABILITY_TOKENS.some(token => normalized.includes(token))) return 'out_of_stock'
+function getWaitSelector(url: string): string | null {
+  for (const entry of WAIT_SELECTOR_MAP) {
+    if (entry.test(url)) return entry.selector
+  }
   return null
 }
 
-export async function extractStockSignal(html: string): Promise<StockSignalResult> {
-  const jsonLdRe = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi
-  let m: RegExpExecArray | null
-
-  const checkObjectForAvailability = (node: any): 'in_stock' | 'out_of_stock' | null => {
-    if (!node || typeof node !== 'object') return null
-    const availability = typeof node.availability === 'string' ? normalizeAvailability(node.availability) : null
-    if (availability) return availability
-    const offers = node.offers
-    if (Array.isArray(offers)) {
-      for (const offer of offers) {
-        const status = checkObjectForAvailability(offer)
-        if (status) return status
-      }
-    } else if (offers && typeof offers === 'object') {
-      const status = checkObjectForAvailability(offers)
-      if (status) return status
-    }
-    if (Array.isArray(node['@graph'])) {
-      for (const entry of node['@graph']) {
-        const status = checkObjectForAvailability(entry)
-        if (status) return status
-      }
-    }
-    return null
-  }
-
-  while ((m = jsonLdRe.exec(html)) !== null) {
-    try {
-      const parsed = JSON.parse(m[1].trim())
-      const entries = Array.isArray(parsed) ? parsed : [parsed]
-      for (const entry of entries) {
-        const status = checkObjectForAvailability(entry)
-        if (status) return { status, source: 'json_ld.availability' }
-      }
-    } catch {
-      // ignore malformed JSON-LD
-    }
-  }
-
-  const metaPatterns = [
-    /<meta[^>]+(?:property|name)="product:availability"[^>]+content="([^"]+)"/i,
-    /<meta[^>]+(?:property|name)="availability"[^>]+content="([^"]+)"/i,
-    /<meta[^>]+(?:property|name)="og:availability"[^>]+content="([^"]+)"/i,
+// ── JS renderer with provider fallback ──────────────────────────────────────
+async function renderJs(url: string, timeoutBudgetMs: number, forceResidential = false): Promise<string> {
+  const providers = [
+    {
+      name: 'ScraperAPI',
+      fn: (u: string, t: number) => renderWithScraperApi(u, t, forceResidential),
+      key: process.env.SCRAPER_API_KEY,
+    },
+    {
+      name: 'Browserless',
+      fn: renderWithBrowserless,
+      key: process.env.BROWSERLESS_API_KEY,
+    },
   ]
-  for (const pattern of metaPatterns) {
-    const match = html.match(pattern)
-    if (!match) continue
-    const normalized = normalizeAvailability(match[1])
-    if (normalized) return { status: normalized, source: 'meta.availability' }
+
+  const configured = providers.filter(p => p.key)
+  if (configured.length === 0) throw new Error('No JS renderer configured (set SCRAPER_API_KEY or BROWSERLESS_API_KEY)')
+
+  for (const provider of configured) {
+    try {
+      const timeLeft = Math.min(timeoutBudgetMs, 45_000)
+      if (timeLeft < 5_000) throw new Error('Scrape timeout budget exhausted')
+      console.log('[scraper] rendering with', { provider: provider.name, url, timeLeft })
+      return await provider.fn(url, timeLeft)
+    } catch (err) {
+      console.warn(`[scraper] ${provider.name} failed`, { url, error: String(err) })
+    }
   }
 
-  try {
-    const { load } = await import('cheerio')
-    const $ = load(html)
-    const stockScopeText = [
-      '[data-testid*="stock"]',
-      '[class*="stock"]',
-      '[id*="stock"]',
-      '[class*="availability"]',
-      '[id*="availability"]',
-      'body',
-    ]
-      .map(selector => $(selector).slice(0, selector === 'body' ? 1 : 5).text())
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim()
+  throw new Error('All JS renderers failed or timed out')
+}
 
-    for (const rule of STOCK_TEXT_PATTERNS) {
-      if (rule.pattern.test(stockScopeText)) {
-        return { status: rule.status, source: `text_pattern.${rule.status}` }
+// ── Platform detection (from rendered HTML) ──────────────────────────────────
+function detectPlatformChain(url: string, html: string): PlatformName[] {
+  const chain: PlatformName[] = []
+  if (detectShopify(url, html)) chain.push('shopify')
+  if (detectWoocommerce(url, html)) chain.push('woocommerce')
+  if (detectMagento(url, html)) chain.push('magento')
+  if (detectBigcommerce(url, html)) chain.push('bigcommerce')
+  chain.push('generic')
+  return Array.from(new Set(chain))
+}
+
+function detectPrimaryPlatform(url: string, html: string): PlatformName | 'unknown' {
+  const chain = detectPlatformChain(url, html)
+  return chain.find(name => name !== 'generic') ?? 'generic'
+}
+
+async function runPlatformExtractor(
+  name: PlatformName,
+  html: string,
+  url: string,
+  options?: ScrapePriceOptions,
+) {
+  if (name === 'shopify') return extractShopify(html, url, options)
+  if (name === 'woocommerce') return extractWoocommerce(html, url, options)
+  if (name === 'magento') return extractMagento(html, url, options)
+  if (name === 'bigcommerce') return extractBigcommerce(html, url, options)
+  return extractGeneric(html, url, options, 'full')
+}
+
+function classifyFailure(errorMessage: string): FailureReasonCode {
+  const message = errorMessage.toLowerCase()
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout'
+  if (
+    message.includes('403') || message.includes('429') || message.includes('captcha') ||
+    message.includes('forbidden') || message.includes('access denied') || message.includes('blocked')
+  ) return 'blocked'
+  return 'parse_fail'
+}
+
+function makeFailedResult(
+  error: string,
+  stockStatus: ScrapeResult['stockStatus'] = 'unknown',
+  stockSource: string | null = null,
+  platform: ScrapeResult['platform'] = 'unknown',
+): ScrapeResult {
+  return {
+    price: null,
+    scrapedCurrency: null,
+    method: 'failed',
+    candidates: [],
+    metricUsed: null,
+    matchedPreferredMetric: false,
+    stockStatus,
+    stockSource,
+    error,
+    failureCode: classifyFailure(error),
+    platform,
+  }
+}
+
+// ── Main scrape function ─────────────────────────────────────────────────────
+export async function scrapePrice(
+  url: string,
+  _targetCurrency?: string,
+  options?: ScrapePriceOptions,
+): Promise<ScrapeResult> {
+  const startedAt = Date.now()
+  const allCandidates: ScrapedCandidate[] = []
+  let primaryPlatform: PlatformName | 'unknown' = 'unknown'
+  let stockStatus: ScrapeResult['stockStatus'] = 'unknown'
+  let stockSource: string | null = null
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // TIER 1 — Direct structured API endpoints
+  // These return clean JSON without needing any proxy or JS rendering.
+  // Works for Shopify stores (and any store with a public /products/slug.js endpoint).
+  // Cost: 0 proxy credits. Speed: ~1–2s.
+  // ────────────────────────────────────────────────────────────────────────────
+  const directApiCandidates = detectDirectApiCandidates(url)
+
+  for (const apiCandidate of directApiCandidates) {
+    if (remainingMs(startedAt) < 3_000) break
+    try {
+      const res = await fetch(apiCandidate.url, {
+        signal: timeoutSignal(Math.min(TIER1_TIMEOUT_MS, remainingMs(startedAt))),
+        headers: {
+          Accept: 'application/json, text/plain;q=0.9, */*;q=0.8',
+          'User-Agent': 'PricewatchBot/1.0 (+https://pricewatch.app)',
+        },
+      })
+
+      if (!res.ok) {
+        console.log('[scraper] tier1 direct API non-OK', { url: apiCandidate.url, status: res.status })
+        continue
+      }
+
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!contentType.includes('json') && !contentType.includes('javascript')) continue
+
+      const data = await res.json()
+      const result = extractPriceFromDirectJson(data, url, apiCandidate.type, options)
+
+      if (result.price !== null) {
+        console.log('[scraper] tier1 direct API hit', {
+          url,
+          apiUrl: apiCandidate.url,
+          type: apiCandidate.type,
+          price: result.price,
+          metric: result.metricUsed,
+        })
+        return {
+          price: result.price,
+          scrapedCurrency: result.scrapedCurrency,
+          candidates: result.candidates,
+          matchedPreferredMetric: result.matchedPreferredMetric,
+          method: 'direct',
+          metricUsed: result.metricUsed,
+          platform: apiCandidate.type.startsWith('shopify') ? 'shopify' : 'generic',
+          stockStatus: 'unknown',
+          stockSource: null,
+        }
+      }
+
+      // Collect candidates even if no confident pick yet
+      allCandidates.push(...result.candidates)
+    } catch (err) {
+      console.log('[scraper] tier1 direct API error', { url: apiCandidate.url, error: String(err) })
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // TIER 2 — Lightweight plain fetch + structured data extraction
+  // Plain HTTP GET with no proxy. Parses JSON-LD, meta tags, embedded JSON,
+  // and Next.js __NEXT_DATA__ from server-rendered HTML.
+  // Skips CSS selectors (those need a rendered DOM).
+  // Cost: 0 proxy credits. Speed: ~2–4s.
+  // ────────────────────────────────────────────────────────────────────────────
+  if (remainingMs(startedAt) > TIER2_TIMEOUT_MS) {
+    try {
+      const tier2TimeoutMs = Math.min(TIER2_TIMEOUT_MS, remainingMs(startedAt) - 5_000)
+
+      const lightRes = await fetch(url, {
+        signal: timeoutSignal(tier2TimeoutMs),
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+      })
+
+      if (lightRes.ok) {
+        const lightHtml = await lightRes.text()
+
+        if (!isBotChallengePage(lightHtml)) {
+          // Structured data extraction (JSON-LD, meta tags, embedded JSON)
+          const structuredResult = await extractGeneric(lightHtml, url, options, 'structured-only')
+          allCandidates.push(...structuredResult.candidates)
+
+          // Next.js data API — works on any Next.js storefront (H&M, Gymshark, etc.)
+          if (detectNextJs(lightHtml)) {
+            const nextResult = await scrapeNextJsDataApi(
+              url,
+              lightHtml,
+              options,
+              Math.min(10_000, remainingMs(startedAt) - 3_000),
+            )
+            if (nextResult.candidates.length > 0) {
+              allCandidates.push(...nextResult.candidates)
+              primaryPlatform = 'generic' // Next.js is cross-platform
+            }
+          }
+
+          // Check if we already have a high-confidence result — skip expensive JS render
+          const tier2Pick = pickCandidate(dedupeCandidates(allCandidates), options?.preferredMetric)
+          const tier2Source = tier2Pick.metricUsed
+            ? allCandidates.find(c => c.metric === tier2Pick.metricUsed)?.source ?? ''
+            : ''
+
+          if (tier2Pick.price !== null && isHighConfidenceResult(tier2Pick.metricUsed, tier2Source)) {
+            console.log('[scraper] tier2 high-confidence hit — skipping JS render', {
+              url,
+              price: tier2Pick.price,
+              metric: tier2Pick.metricUsed,
+              source: tier2Source,
+            })
+
+            // Extract stock signal from the already-fetched HTML
+            const stockSignal = await extractStockSignal(lightHtml)
+
+            return {
+              price: tier2Pick.price,
+              scrapedCurrency: tier2Pick.scrapedCurrency,
+              candidates: dedupeCandidates(allCandidates),
+              matchedPreferredMetric: tier2Pick.matchedPreferredMetric,
+              method: 'direct',
+              metricUsed: tier2Pick.metricUsed,
+              platform: primaryPlatform !== 'unknown'
+                ? primaryPlatform
+                : detectPrimaryPlatform(url, lightHtml),
+              stockStatus: stockSignal.status,
+              stockSource: stockSignal.source,
+            }
+          }
+
+          // Detect platform from lightweight HTML for later use in Tier 3
+          if (primaryPlatform === 'unknown') {
+            primaryPlatform = detectPrimaryPlatform(url, lightHtml)
+          }
+
+          console.log('[scraper] tier2 no high-confidence result, escalating to JS render', {
+            url,
+            candidatesSoFar: allCandidates.length,
+            platform: primaryPlatform,
+          })
+        } else {
+          console.log('[scraper] tier2 bot challenge page detected on plain fetch', { url })
+        }
+      } else {
+        console.log('[scraper] tier2 plain fetch non-OK', { url, status: lightRes.status })
+      }
+    } catch (err) {
+      console.log('[scraper] tier2 plain fetch failed', { url, error: String(err) })
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // TIER 3 — JS render via ScraperAPI / Browserless
+  // Full headless browser render. Uses residential proxy for known-blocked domains.
+  // Cost: 1–5 ScraperAPI credits per call. Speed: ~10–30s.
+  // ────────────────────────────────────────────────────────────────────────────
+  const needsResidential = requiresResidentialProxy(url)
+
+  try {
+    const tier3TimeoutMs = Math.min(45_000, remainingMs(startedAt) - 2_000)
+    if (tier3TimeoutMs < 5_000) {
+      return makeFailedResult('Timeout budget exhausted before JS render', stockStatus, stockSource, primaryPlatform)
+    }
+
+    const html = await renderJs(url, tier3TimeoutMs, needsResidential)
+
+    // Bot challenge detection — must happen before any extraction attempt
+    if (isBotChallengePage(html)) {
+      console.log('[scraper] tier3 bot challenge page after JS render', {
+        url,
+        renderedLength: html.length,
+        usedResidential: needsResidential,
+      })
+
+      // If we already have any candidates from Tier 1/2, use them
+      if (allCandidates.length > 0) {
+        const fallbackPick = pickCandidate(dedupeCandidates(allCandidates), options?.preferredMetric)
+        if (fallbackPick.price !== null) {
+          console.log('[scraper] using tier1/2 candidates after tier3 bot challenge', {
+            url,
+            price: fallbackPick.price,
+            metric: fallbackPick.metricUsed,
+          })
+          return {
+            price: fallbackPick.price,
+            scrapedCurrency: fallbackPick.scrapedCurrency,
+            candidates: dedupeCandidates(allCandidates),
+            matchedPreferredMetric: fallbackPick.matchedPreferredMetric,
+            method: 'js-render',
+            metricUsed: fallbackPick.metricUsed,
+            platform: primaryPlatform,
+            stockStatus,
+            stockSource,
+          }
+        }
+      }
+
+      return makeFailedResult(
+        needsResidential
+          ? 'Bot challenge page returned even with residential proxy'
+          : 'Bot challenge page returned — site requires residential proxy',
+        stockStatus,
+        stockSource,
+        primaryPlatform,
+      )
+    }
+
+    // Stock signal extraction from rendered HTML
+    const stockSignal = await extractStockSignal(html)
+    stockStatus = stockSignal.status
+    stockSource = stockSignal.source
+
+    // Platform detection from rendered HTML (more accurate than from plain fetch)
+    const extractorChain = detectPlatformChain(url, html)
+    primaryPlatform = extractorChain.find(name => name !== 'generic') ?? 'generic'
+
+    console.log('[scraper] tier3 extractor chain', { url, extractorChain, stockStatus })
+
+    // Next.js data API from rendered HTML — catch any Next.js stores
+    // that weren't caught in Tier 2 (e.g. if Tier 2 plain fetch was blocked)
+    if (detectNextJs(html)) {
+      const nextResult = await scrapeNextJsDataApi(
+        url,
+        html,
+        options,
+        Math.min(10_000, remainingMs(startedAt) - 2_000),
+      )
+      if (nextResult.candidates.length > 0) {
+        allCandidates.push(...nextResult.candidates)
       }
     }
-  } catch {
-    // ignore cheerio parsing errors
-  }
 
-  return { status: 'unknown', source: null }
-}
+    // Run all detected platform extractors
+    for (const extractorName of extractorChain) {
+      if (remainingMs(startedAt) <= 0) {
+        console.warn('[scraper] timeout budget exhausted mid-chain', { url, extractorName })
+        break
+      }
+      const result = await runPlatformExtractor(extractorName, html, url, options)
+      allCandidates.push(...result.candidates)
+    }
+  } catch (err) {
+    const errorText = String(err)
+    console.log('[scraper] tier3 JS render failed', { url, error: errorText })
 
-// ── Price text parsing ───────────────────────────────────────────────────────
-
-export function parsePriceText(raw: string): number | null {
-  const cleaned = raw
-    .replace(/\u00a0/g, ' ')
-    .replace(/\u202f/g, ' ')
-    .replace(/\s+/g, '')
-    .replace(/[^\d,\.]/g, '')
-
-  if (!cleaned || cleaned.length < 1) return null
-
-  const lastComma = cleaned.lastIndexOf(',')
-  const lastDot = cleaned.lastIndexOf('.')
-
-  let normalized = cleaned
-  if (lastComma > lastDot) {
-    normalized = normalized.replace(/\./g, '').replace(',', '.')
-  } else {
-    normalized = normalized.replace(/,/g, '')
-  }
-
-  const n = parseFloat(normalized)
-  if (Number.isNaN(n) || n <= 0 || n > 10_000_000) return null
-  return n
-}
-
-// ── Currency detection ───────────────────────────────────────────────────────
-
-const CURRENCY_SYMBOL_MAP: Record<string, CurrencyCode> = {
-  '$': 'USD', '€': 'EUR', '£': 'GBP',
-  kr: 'SEK', sek: 'SEK', nok: 'NOK', dkk: 'DKK',
-  cad: 'CAD', aud: 'AUD', jpy: 'JPY', '¥': 'JPY',
-}
-
-const DOMAIN_CURRENCY: Record<string, CurrencyCode> = {
-  '.se': 'SEK', '.no': 'NOK', '.dk': 'DKK', '.fi': 'EUR',
-  '.co.uk': 'GBP', '.uk': 'GBP', '.eu': 'EUR',
-}
-
-export function detectCurrency(raw: string, url: string): CurrencyCode {
-  const lowered = raw.toLowerCase()
-  for (const [token, code] of Object.entries(CURRENCY_SYMBOL_MAP)) {
-    if (lowered.includes(token)) return code
-  }
-
-  try {
-    const parsedUrl = new URL(url)
-    const host = parsedUrl.hostname.toLowerCase()
-    const path = parsedUrl.pathname.toLowerCase()
-    for (const [suffix, code] of Object.entries(DOMAIN_CURRENCY)) {
-      if (host.endsWith(suffix)) return code
+    // If Tier 1/2 found anything, use it rather than reporting failure
+    if (allCandidates.length > 0) {
+      const fallbackPick = pickCandidate(dedupeCandidates(allCandidates), options?.preferredMetric)
+      if (fallbackPick.price !== null) {
+        console.log('[scraper] using tier1/2 candidates after tier3 failure', {
+          url,
+          price: fallbackPick.price,
+        })
+        return {
+          price: fallbackPick.price,
+          scrapedCurrency: fallbackPick.scrapedCurrency,
+          candidates: dedupeCandidates(allCandidates),
+          matchedPreferredMetric: fallbackPick.matchedPreferredMetric,
+          method: 'direct',
+          metricUsed: fallbackPick.metricUsed,
+          platform: primaryPlatform,
+          stockStatus,
+          stockSource,
+        }
+      }
     }
 
-    if (host.includes('hm.com')) {
-      if (/\/(sv_se|sv)\b/.test(path)) return 'SEK'
-      if (/\/(fi_fi|fi)\b/.test(path)) return 'EUR'
-      if (/\/(da_dk|dk)\b/.test(path)) return 'DKK'
-      if (/\/(nb_no|nn_no|no)\b/.test(path)) return 'NOK'
-      if (/\/(en_gb|gb)\b/.test(path)) return 'GBP'
-      if (/\/(en_us|us)\b/.test(path)) return 'USD'
-    }
-
-    if (host.includes('etsy.com')) {
-      if (url.includes('/fi-')) return 'EUR'
-      if (url.includes('/se-')) return 'SEK'
-      if (url.includes('/no-')) return 'NOK'
-      if (url.includes('/dk-')) return 'DKK'
-      if (url.includes('/en-gb/')) return 'GBP'
-      if (url.includes('/en-us/')) return 'USD'
-      return 'EUR'
-    }
-  } catch {
-    // ignore
+    return makeFailedResult(errorText, stockStatus, stockSource, primaryPlatform)
   }
 
-  return 'USD'
-}
-
-// ── Misc utils ───────────────────────────────────────────────────────────────
-
-const SKIP_TEXT = ['shipping', 'frakt', 'delivery', 'rating', 'rabatt', 'discount', 'kvar', 'stock', 'recensioner', 'betyg']
-
-export function isNonProductPrice(raw: string): boolean {
-  return SKIP_TEXT.some(t => raw.toLowerCase().includes(t))
-}
-
-export function dedupeCandidates(candidates: ScrapedCandidate[]): ScrapedCandidate[] {
-  const seen = new Set<string>()
-  return candidates.filter(candidate => {
-    if (seen.has(candidate.metric)) return false
-    seen.add(candidate.metric)
-    return true
-  })
-}
-
-export function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: string | null): ExtractResult {
-  const deduped = dedupeCandidates(candidates)
+  // ── Final candidate selection ─────────────────────────────────────────────
+  const deduped = dedupeCandidates(allCandidates)
 
   if (deduped.length === 0) {
-    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
-  }
-
-  const scoreCandidate = (candidate: ScrapedCandidate): CandidateScore => {
-    const source = candidate.source.toLowerCase()
-    const metric = candidate.metric.toLowerCase()
-
-    let reliabilityScore = 10
-    let reliabilityReason = 'generic selector/source fallback'
-
-    if (source.includes('shopify direct api')) {
-      reliabilityScore = 130
-      reliabilityReason = 'shopify direct API variant price'
-    } else if (source.includes('shopify .js endpoint')) {
-      reliabilityScore = 120
-      reliabilityReason = 'shopify .js endpoint variant price'
-    } else if (source.includes('amazon buy box')) {
-      reliabilityScore = 125
-      reliabilityReason = 'amazon buy-box displayed price'
-    } else if (source.includes('json-ld') && metric.includes('.offers')) {
-      reliabilityScore = 110
-      reliabilityReason = 'json-ld product offers price'
-    } else if (source.includes('next.js data api') || source.includes('json data walk')) {
-      reliabilityScore = 90
-      reliabilityReason = 'next.js structured data API'
-    } else if (source.includes('shopify productjson')) {
-      reliabilityScore = 95
-      reliabilityReason = 'shopify embedded ProductJson variant price'
-    } else if (source.includes('etsy state') || source.includes('hm __next_data__')) {
-      reliabilityScore = 85
-      reliabilityReason = 'site app-state product payload'
-    } else if (source.includes('meta tag')) {
-      reliabilityScore = 40
-      reliabilityReason = 'meta product price tag'
-    } else if (source.includes('selector')) {
-      reliabilityScore = 20
-      reliabilityReason = 'css selector extracted text'
-    }
-
-    let penaltyScore = 0
-    const penaltyReasons: string[] = []
-
-    const addPenalty = (value: number, reason: string) => {
-      penaltyScore += value
-      penaltyReasons.push(reason)
-    }
-
-    if (/(shipping|frakt|delivery|postage|freight)/.test(metric) || /(shipping|frakt|delivery|postage|freight)/.test(source)) {
-      addPenalty(80, 'shipping/delivery indicator')
-    }
-    if (/(originalprice|regularprice|strikethrough|compare_at_price|wasprice|beforeprice|price-item--regular)/.test(metric)) {
-      addPenalty(55, 'likely previous/strikethrough price')
-    }
-    if (/(bundle|pack|setprice|multipack|2for|3for)/.test(metric) || /(bundle|pack|set)/.test(source)) {
-      addPenalty(35, 'bundle/set indicator')
-    }
-    if (/(unitprice|priceper|perkg|perg|perl|perm2|per m2|per st|per item)/.test(metric) || /(unit price|per kg|per l|per m2)/.test(source)) {
-      addPenalty(45, 'unit-price indicator')
-    }
-
     return {
-      metric: candidate.metric,
-      source: candidate.source,
-      reliabilityScore,
-      penaltyScore,
-      finalScore: reliabilityScore - penaltyScore,
-      reliabilityReason,
-      penaltyReasons,
+      ...makeFailedResult('Price not found in rendered page', stockStatus, stockSource, primaryPlatform),
+      failureCode: 'no_candidate',
     }
   }
 
-  const scored = deduped.map(candidate => ({ candidate, score: scoreCandidate(candidate) }))
+  const picked = pickCandidate(deduped, options?.preferredMetric)
 
-  const preferred = preferredMetric
-    ? scored.find(({ candidate }) => candidate.metric === preferredMetric)
-    : null
-
-  const bestByScore = scored.reduce((best, current) => {
-    if (!best) return current
-    if (current.score.finalScore !== best.score.finalScore) {
-      return current.score.finalScore > best.score.finalScore ? current : best
-    }
-    return current.candidate.metric.localeCompare(best.candidate.metric) < 0 ? current : best
-  }, null as (typeof scored)[number] | null)
-
-  const selected = preferred ?? bestByScore
-  if (!selected) {
-    return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }
-  }
-
-  console.log('[scraper] candidate scoring', {
-    preferredMetric: preferredMetric ?? null,
-    metricUsed: selected.candidate.metric,
-    source: selected.candidate.source,
-    matchedPreferredMetric: Boolean(preferred),
-    score: selected.score.finalScore,
-    scoreBreakdown: {
-      reliabilityScore: selected.score.reliabilityScore,
-      reliabilityReason: selected.score.reliabilityReason,
-      penaltyScore: selected.score.penaltyScore,
-      penaltyReasons: selected.score.penaltyReasons,
-    },
+  console.log('[scraper] final pick', {
+    url,
+    preferredMetric: options?.preferredMetric ?? null,
+    metricUsed: picked.metricUsed,
+    matchedPreferred: picked.matchedPreferredMetric,
+    totalCandidates: deduped.length,
+    stockStatus,
+    platform: primaryPlatform,
   })
 
   return {
-    price: selected.candidate.price,
-    scrapedCurrency: selected.candidate.currency,
+    price: picked.price,
+    scrapedCurrency: picked.scrapedCurrency,
     candidates: deduped,
-    metricUsed: selected.candidate.metric,
-    matchedPreferredMetric: Boolean(preferred),
+    matchedPreferredMetric: picked.matchedPreferredMetric,
+    method: 'js-render',
+    metricUsed: picked.metricUsed,
+    platform: primaryPlatform,
+    stockStatus,
+    stockSource,
   }
 }
 
-export function cleanUrl(rawUrl: string): string {
-  try {
-    const url = new URL(rawUrl.trim())
-    const host = url.hostname.replace(/^www\./, '')
-    if (host.includes('etsy.com')) {
-      const m = url.pathname.match(/\/listing\/\d+/)
-      if (m) return `https://www.etsy.com${m[0]}`
-    }
-    const TRACKING = ['utm_source', 'utm_medium', 'utm_campaign', 'fbclid', 'gclid', 'ref']
-    TRACKING.forEach(p => url.searchParams.delete(p))
-    return url.origin + url.pathname
-  } catch {
-    return rawUrl.trim()
-  }
-}
-
-export function getDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return ''
-  }
-}
-
-export const JS_RENDERED_DOMAINS = new Set([
-  'power.se', 'power.no', 'power.dk', 'power.fi',
-  'elgiganten.se', 'elgiganten.dk', 'mediamarkt.se',
-  'webhallen.com', 'inet.se', 'etsy.com', 'shopee.com', 'lazada.com',
-])
+export * from './shared'
