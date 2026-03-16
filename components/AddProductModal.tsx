@@ -163,6 +163,8 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
             ourPrice: ourPrice ? parseFloat(ourPrice) : null,
             imageUrl: imageUrl.trim() || null,
             vatIncluded,
+            mapFloorPrice: mapEnabled && mapFloorPrice ? parseFloat(mapFloorPrice) : null,
+            mapEnabled,
           }
         : { 
             storeId: selectedStoreId, 
