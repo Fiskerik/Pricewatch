@@ -165,6 +165,7 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
             vatIncluded,
             mapFloorPrice: mapEnabled && mapFloorPrice ? parseFloat(mapFloorPrice) : null,
             mapEnabled,
+            shopifyVariantId: shopifyProduct?.shopify_variant_id ?? null,
           }
         : { 
             storeId: selectedStoreId, 
