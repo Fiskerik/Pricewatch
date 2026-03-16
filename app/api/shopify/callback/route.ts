@@ -131,13 +131,14 @@ export async function GET(req: NextRequest) {
         .upsert({
           store_id: store.id,
           shopify_product_id: String(product.id),
+          shopify_variant_id: String(product.variants?.[0]?.id ?? ''),  // ← add this
           title: product.title,
           handle: product.handle,
           image_url: product.images?.[0]?.src ?? null,
           our_price: mainVariant?.price ? parseFloat(mainVariant.price) : null,
           currency_code: "USD",
-        }, { 
-          onConflict: 'shopify_product_id,store_id' 
+        }, {
+          onConflict: 'shopify_product_id,store_id'
         })
     }
 
