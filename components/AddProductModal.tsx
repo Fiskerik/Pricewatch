@@ -48,6 +48,12 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mapFloorPrice, setMapFloorPrice] = useState(
+  product?.map_floor_price !== null && product?.map_floor_price !== undefined 
+    ? String(product.map_floor_price) 
+    : ''
+)
+const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
 
   // Load user's stores
   useEffect(() => {
