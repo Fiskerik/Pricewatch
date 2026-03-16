@@ -35,7 +35,18 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString()
   const savedMetric = (competitor as any)?.selected_price_metric ?? (typeof preferredMetric === 'string' ? preferredMetric : null)
   const result = await scrapePrice(competitor.url, targetCurrency, { preferredMetric: savedMetric })
-
+  const savedDecimalShift = (competitor as any).price_decimal_shift ?? 0
+  const savedCurrencyOverride = (competitor as any).price_currency_override ?? null
+  
+  if (result.price !== null && savedDecimalShift !== 0) {
+    result.price = result.price / Math.pow(10, savedDecimalShift)
+    result.price = Math.round(result.price * 1_000_000) / 1_000_000
+    console.log('[competitors/fetch] applied decimal shift', { competitorId, savedDecimalShift, adjustedPrice: result.price })
+  }
+  if (savedCurrencyOverride && result.price !== null) {
+    result.scrapedCurrency = savedCurrencyOverride
+    console.log('[competitors/fetch] applied currency override', { competitorId, savedCurrencyOverride })
+  }
   console.log('[competitors/fetch]', {
     competitorId,
     url: competitor.url,
