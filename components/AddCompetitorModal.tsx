@@ -21,6 +21,61 @@ interface DebugCandidate {
   confidence?: number
 }
 
+// ── Client-side URL sanitizer ────────────────────────────────────────────────
+// Mirrors the server-side normalizer. Runs before the API call so users
+// get instant feedback instead of a 400 error after a round-trip.
+function sanitizeUrl(rawInput: string): { url: string; error: string | null } {
+  try {
+    let input = rawInput.trim()
+
+    // Strip surrounding quotes/backticks
+    input = input.replace(/^["'`]+|["'`]+$/g, '').trim()
+
+    // Decode HTML entities
+    input = input
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+
+    // Extract embedded URL from mixed text
+    if (input.includes(' ')) {
+      const embedded = input.match(/https?:\/\/[^\s"'<>()[\]{}\\]+/i)
+      if (embedded) {
+        input = embedded[0]
+      } else {
+        input = input.replace(/\s+/g, '%20')
+      }
+    }
+
+    // Protocol-relative → https
+    if (input.startsWith('//')) input = 'https:' + input
+
+    // Auto-add https:// if missing
+    if (!/^https?:\/\//i.test(input)) {
+      if (/^[a-z0-9]([a-z0-9-]*\.)+[a-z]{2,}/i.test(input)) {
+        input = 'https://' + input
+      } else {
+        return { url: '', error: 'Please paste a full product page URL (e.g. https://example.com/product)' }
+      }
+    }
+
+    const parsed = new URL(input)
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { url: '', error: 'Only http:// and https:// URLs are supported' }
+    }
+
+    if (!parsed.hostname || !parsed.hostname.includes('.')) {
+      return { url: '', error: 'URL does not look like a valid website address' }
+    }
+
+    return { url: input, error: null }
+  } catch {
+    return { url: '', error: 'Please paste a full product page URL (e.g. https://example.com/product)' }
+  }
+}
+
 export default function AddCompetitorModal({
   productId,
   productCurrency,
@@ -61,6 +116,13 @@ export default function AddCompetitorModal({
     setDebugData(null)
   }, [mode, competitor])
 
+  // Validate URL on blur so the user gets feedback as soon as they leave the field
+  const handleUrlBlur = () => {
+    if (!url.trim()) return
+    const { error } = sanitizeUrl(url)
+    if (error) setSaveError(error)
+  }
+
   const handleTestScrapeNow = async () => {
     if (!competitor?.id) return
     setTestingScrape(true)
@@ -80,18 +142,6 @@ export default function AddCompetitorModal({
       }
 
       const candidates = Array.isArray(data?.candidates) ? data.candidates as DebugCandidate[] : []
-      console.log('[competitor/edit] test scrape result', {
-        competitorId: competitor.id,
-        metricUsed: data?.metricUsed ?? null,
-        matchedPreferredMetric: Boolean(data?.matchedPreferredMetric),
-        candidateCount: candidates.length,
-      })
-      if (candidates.length === 0) {
-        console.log('[competitor/edit] no candidate metrics returned from test scrape', {
-          competitorId: competitor.id,
-          preferredMetric: trackingMetric,
-        })
-      }
       setDebugData({
         metricUsed: typeof data?.metricUsed === 'string' ? data.metricUsed : null,
         matchedPreferredMetric: Boolean(data?.matchedPreferredMetric),
@@ -111,6 +161,16 @@ export default function AddCompetitorModal({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!url.trim()) return
+
+    // Client-side validation before sending to the API
+    if (mode === 'add') {
+      const { error: urlError } = sanitizeUrl(url)
+      if (urlError) {
+        setSaveError(urlError)
+        return
+      }
+    }
+
     setSaving(true)
     setSaveError(null)
 
@@ -152,7 +212,7 @@ export default function AddCompetitorModal({
         onAdded(data.competitor)
         onClose()
       }
-    } catch (err) {
+    } catch {
       setSaveError('Something went wrong. Please try again.')
     } finally {
       setSaving(false)
@@ -184,7 +244,7 @@ export default function AddCompetitorModal({
           <p className="text-sm text-gray-500 mt-1">
             {mode === 'edit'
               ? 'Update the saved competitor details.'
-              : `Paste a URL to start tracking prices in ${productCurrency.toUpperCase()}.`}
+              : `Paste the competitor's product page URL. Tracking parameters are stripped automatically.`}
           </p>
         </div>
 
@@ -197,9 +257,13 @@ export default function AddCompetitorModal({
               required
               value={url}
               onChange={e => { setUrl(e.target.value); setSaveError(null) }}
+              onBlur={handleUrlBlur}
               placeholder="https://competitor.com/products/widget"
               className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
             />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Paste any product page link — tracking params like <code className="bg-gray-100 px-1 rounded">utm_source</code>, <code className="bg-gray-100 px-1 rounded">msclkid</code>, etc. are stripped automatically.
+            </p>
           </div>
 
           <div>
@@ -209,7 +273,7 @@ export default function AddCompetitorModal({
             <input
               value={label}
               onChange={e => setLabel(e.target.value)}
-              placeholder="e.g. Amazon, Best Buy, Dustin"
+              placeholder="e.g. Amazon, Netonnet, H&M"
               className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
             />
           </div>
@@ -264,7 +328,7 @@ export default function AddCompetitorModal({
                       <div className="space-y-1">
                         {debugData.candidates.length === 0 && (
                           <div className="text-gray-500">
-                            No candidates were found in this scrape. Try another URL or adjust the metric manually.
+                            No candidates found. Try a different URL or adjust the metric manually.
                           </div>
                         )}
                         {debugData.candidates.slice(0, 5).map((candidate, idx) => {
@@ -303,7 +367,6 @@ export default function AddCompetitorModal({
             </div>
           )}
 
-
           {saveError && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
               {saveError}
@@ -338,7 +401,7 @@ export default function AddCompetitorModal({
           </div>
 
           <p className="text-[11px] text-gray-500 pt-1">
-            If the fetched price is missing or incorrect, please email support: eaconsulting.supp@gmail.com
+            Having trouble? Email support: eaconsulting.supp@gmail.com
           </p>
         </form>
       </div>
