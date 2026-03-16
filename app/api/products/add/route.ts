@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const {
     storeId, title, ourPrice, currencyCode, vatIncluded,
     shopifyProductId, shopifyVariantId, handle, imageUrl,
-    mapFloorPrice, mapEnabled,
+    mapFloorPrice, mapEnabled, autoPriceEnabled, autoPriceUndercutType, autoPriceUndercutValue,
   } = await req.json()
 
   if (!storeId || !title) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
@@ -37,6 +37,11 @@ export async function POST(req: NextRequest) {
     image_url: imageUrl ?? null,
     map_floor_price: typeof mapFloorPrice === 'number' && mapFloorPrice > 0 ? mapFloorPrice : null,
     map_enabled: typeof mapEnabled === 'boolean' ? mapEnabled : false,
+    auto_price_enabled: typeof autoPriceEnabled === 'boolean' ? autoPriceEnabled : false,
+    auto_price_undercut_type: autoPriceEnabled && (autoPriceUndercutType === 'percent' || autoPriceUndercutType === 'fixed') ? autoPriceUndercutType : null,
+    auto_price_undercut_value: autoPriceEnabled && typeof autoPriceUndercutValue === 'number' && Number.isFinite(autoPriceUndercutValue)
+      ? autoPriceUndercutValue
+      : null,
   }
 
   let { data: product, error } = await supabase

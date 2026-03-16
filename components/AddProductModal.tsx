@@ -55,6 +55,13 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
     : ''
 )
 const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
+  const [autoPriceEnabled, setAutoPriceEnabled] = useState(product?.auto_price_enabled ?? false)
+  const [autoPriceUndercutType, setAutoPriceUndercutType] = useState<'percent' | 'fixed'>(product?.auto_price_undercut_type === 'fixed' ? 'fixed' : 'percent')
+  const [autoPriceUndercutValue, setAutoPriceUndercutValue] = useState(
+    product?.auto_price_undercut_value !== null && product?.auto_price_undercut_value !== undefined
+      ? String(product.auto_price_undercut_value)
+      : ''
+  )
 
   // Load user's stores
   useEffect(() => {
@@ -166,6 +173,9 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
             vatIncluded,
             mapFloorPrice: mapEnabled && mapFloorPrice ? parseFloat(mapFloorPrice) : null,
             mapEnabled,
+            autoPriceEnabled,
+            autoPriceUndercutType,
+            autoPriceUndercutValue: autoPriceEnabled && autoPriceUndercutValue ? parseFloat(autoPriceUndercutValue) : null,
             shopifyVariantId: shopifyProduct?.shopify_variant_id ?? null,
           }
         : { 
@@ -177,6 +187,11 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
             handle: shopifyProduct?.handle ?? null,
             imageUrl: imageUrl.trim() || (shopifyProduct?.image_url ?? null),
             vatIncluded,
+            mapFloorPrice: mapEnabled && mapFloorPrice ? parseFloat(mapFloorPrice) : null,
+            mapEnabled,
+            autoPriceEnabled,
+            autoPriceUndercutType,
+            autoPriceUndercutValue: autoPriceEnabled && autoPriceUndercutValue ? parseFloat(autoPriceUndercutValue) : null,
           }
 
       const res = await fetch(endpoint, {
@@ -404,6 +419,49 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
                 <p className="text-[11px] text-gray-400 mt-1">
                   Alert me when any reseller advertises below this price.
                 </p>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoPriceEnabled}
+                onChange={e => setAutoPriceEnabled(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Enable Auto-adjust pricing
+            </label>
+            {autoPriceEnabled && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
+                    Undercut type
+                  </label>
+                  <select
+                    value={autoPriceUndercutType}
+                    onChange={e => setAutoPriceUndercutType(e.target.value as 'percent' | 'fixed')}
+                    className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+                  >
+                    <option value="percent">Percent</option>
+                    <option value="fixed">Fixed amount</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
+                    Undercut value {autoPriceUndercutType === 'percent' ? '(%)' : ''}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={autoPriceUndercutValue}
+                    onChange={e => setAutoPriceUndercutValue(e.target.value)}
+                    placeholder={autoPriceUndercutType === 'percent' ? 'e.g. 2' : 'e.g. 0.50'}
+                    className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+                  />
+                </div>
               </div>
             )}
           </div>

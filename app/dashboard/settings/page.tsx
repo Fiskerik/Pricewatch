@@ -47,6 +47,7 @@ function SettingsContent() {
   const [mockPriceInput, setMockPriceInput] = useState('')
   const [mockEmailPriceInput, setMockEmailPriceInput] = useState('')
   const [mockLoading, setMockLoading] = useState(false)
+  const [billingLoading, setBillingLoading] = useState(false)
   const [mockMessage, setMockMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
@@ -201,6 +202,26 @@ function SettingsContent() {
     router.push('/')
   }
 
+  const handleOpenBillingPortal = async () => {
+    try {
+      setBillingLoading(true)
+      const res = await fetch('/api/stripe/portal', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        setMockMessage({ type: 'error', text: data?.error ?? 'Could not open billing portal.' })
+        return
+      }
+
+      if (data.url) {
+        window.location.href = data.url
+      }
+    } catch {
+      setMockMessage({ type: 'error', text: 'Could not open billing portal. Try again.' })
+    } finally {
+      setBillingLoading(false)
+    }
+  }
+
   const primaryStore = stores.find(s => s.is_primary)
   const connectedStores = stores.filter(s => s.shop_domain)
   const selectedCompetitor = mockCompetitors.find(c => c.id === selectedCompetitorId) ?? null
@@ -264,9 +285,28 @@ function SettingsContent() {
                     Upgrade →
                   </Link>
                 )}
+                {primaryStore?.plan === 'pro' && (
+                  <Link
+                    href="/dashboard/upgrade"
+                    className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg hover:bg-purple-100 transition-colors"
+                  >
+                    Upgrade to Business →
+                  </Link>
+                )}
               </div>
             </div>
           </div>
+        </section>
+
+        <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
+          <h2 className="font-bold text-base mb-4">Billing</h2>
+          <button
+            onClick={handleOpenBillingPortal}
+            disabled={billingLoading}
+            className="text-sm font-semibold text-gray-900 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            {billingLoading ? 'Opening…' : 'Open billing portal →'}
+          </button>
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
@@ -337,6 +377,18 @@ function SettingsContent() {
               })}
             </div>
           )}
+        </section>
+
+        <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
+          <h2 className="font-bold text-base mb-2">Shopify GDPR webhook endpoints</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Add these URLs in your Shopify app dashboard under mandatory GDPR webhooks.
+          </p>
+          <div className="text-xs text-gray-700 space-y-1">
+            <div><span className="font-semibold">customers/redact:</span> {(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')}/api/shopify/webhooks/customers-redact</div>
+            <div><span className="font-semibold">shop/redact:</span> {(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')}/api/shopify/webhooks/shop-redact</div>
+            <div><span className="font-semibold">customers/data_request:</span> {(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')}/api/shopify/webhooks/customers-data-request</div>
+          </div>
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
@@ -418,21 +470,17 @@ function SettingsContent() {
           )}
         </section>
 
-        {primaryStore?.stripe_customer_id && (
-          <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
-            <h2 className="font-bold text-base mb-4">Billing</h2>
-            <button
-              onClick={async () => {
-                const res = await fetch('/api/stripe/portal', { method: 'POST' })
-                const data = await res.json()
-                if (data.url) window.location.href = data.url
-              }}
-              className="text-sm font-semibold text-gray-900 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Open billing portal →
-            </button>
-          </section>
-        )}
+        <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
+          <h2 className="font-bold text-base mb-4">Legal</h2>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/privacy" className="text-sm font-semibold text-gray-900 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+              Privacy policy
+            </Link>
+            <Link href="/terms" className="text-sm font-semibold text-gray-900 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+              Terms and conditions
+            </Link>
+          </div>
+        </section>
 
         <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
           Sign out
