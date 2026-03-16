@@ -205,14 +205,23 @@ export function walkJsonForPrices(
     const val = obj[key]
     const fullPath = `${pathPrefix}.${key}`
 
-    if (PRICE_KEY_RE.test(key)) {
+if (PRICE_KEY_RE.test(key)) {
       // Direct numeric value
       if (typeof val === 'number' && val > 0 && val < 10_000_000) {
+        // Detect minor-unit encoding: SEK/NOK/DKK/JPY prices stored as integers
+        // in öre/øre/sen (e.g. H&M stores 39900 = 399.00 SEK)
+        const detectedCurrency = detectCurrency('', url)
+        const MINOR_UNIT_CURRENCIES = ['SEK', 'NOK', 'DKK', 'JPY', 'HUF', 'CLP', 'KRW', 'ISK']
+        const isMinorUnit =
+          Number.isInteger(val) &&
+          val >= 1000 &&
+          MINOR_UNIT_CURRENCIES.includes(detectedCurrency.toUpperCase())
+        const normalizedAmount = isMinorUnit ? val / 100 : val
         addCandidate({
           metric: fullPath,
           source: 'JSON data walk',
-          price: val,
-          currency: detectCurrency('', url),
+          price: normalizedAmount,
+          currency: detectedCurrency,
         })
       }
       // Direct string value
@@ -524,12 +533,18 @@ export function pickCandidate(candidates: ScrapedCandidate[], preferredMetric?: 
     } else if (source.includes('json-ld') && metric.includes('.offers')) {
       reliabilityScore = 110
       reliabilityReason = 'json-ld product offers price'
-    } else if (source.includes('next.js data api') || source.includes('json data walk')) {
-      reliabilityScore = 90
-      reliabilityReason = 'next.js structured data API'
     } else if (source.includes('shopify productjson')) {
       reliabilityScore = 95
       reliabilityReason = 'shopify embedded ProductJson variant price'
+    } else if (
+      source.includes('next.js data api') ||
+      source.includes('next.js __next_data__') ||
+      source.includes('json data walk')
+    ) {
+      // Next.js inline page props and data API are highly reliable —
+      // must beat CSS selectors (score 20) and meta tags (score 40)
+      reliabilityScore = 90
+      reliabilityReason = 'next.js structured page data'
     } else if (source.includes('etsy state') || source.includes('hm __next_data__')) {
       reliabilityScore = 85
       reliabilityReason = 'site app-state product payload'
