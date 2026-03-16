@@ -22,6 +22,8 @@ export interface Product {
   currency_code?: string | null
   created_at: string
   competitor_urls?: CompetitorUrl[]
+  map_floor_price?: number | null
+  map_enabled?: boolean | null
 }
 
 export interface CompetitorUrl {
