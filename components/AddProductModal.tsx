@@ -12,6 +12,7 @@ interface Store {
 
 interface ShopifyProduct {
   shopify_product_id: string
+  shopify_variant_id?: string
   title: string
   handle: string
   image_url: string | null
