@@ -357,6 +357,43 @@ export async function GET(req: NextRequest) {
           failure_reason_code: null,
           platform: scrapeResult.platform ?? null,
         }).eq('id', job.id)
+
+        // ── MAP violation check ──────────────────────────────────────────────────────
+const mapFloor = product?.map_floor_price ? parseFloat(String(product.map_floor_price)) : null
+const mapEnabled = product?.map_enabled === true
+
+if (mapEnabled && mapFloor !== null && scrapeResult.price !== null && scrapeResult.price < mapFloor) {
+  console.log('[cron] MAP violation detected', {
+    competitorId: comp.id,
+    price: scrapeResult.price,
+    mapFloor,
+  })
+
+  if (userEmail && product?.title) {
+    try {
+      await sendMapViolationAlert({
+        to: userEmail,
+        productTitle: product.title,
+        competitorLabel: comp.label ?? '',
+        competitorUrl: comp.url,
+        competitorPrice: scrapeResult.price,
+        mapFloorPrice: mapFloor,
+        currency: scrapeResult.scrapedCurrency ?? product.currency_code ?? 'USD',
+      })
+
+      await admin.from('alerts_sent').insert({
+        competitor_url_id: comp.id,
+        old_price: mapFloor,     // using floor as reference
+        new_price: scrapeResult.price,
+        alert_type: 'map_violation',
+      })
+    } catch (emailErr) {
+      results.errors.push(`MAP alert failed for ${comp.id}: ${String(emailErr)}`)
+    }
+  }
+}
+
+        
       } catch (err) {
         const errorText = String(err)
         const lowered = errorText.toLowerCase()
