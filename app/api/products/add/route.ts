@@ -7,7 +7,12 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { storeId, title, ourPrice, currencyCode, vatIncluded, shopifyProductId, handle, imageUrl, mapFloorPrice, mapEnabled } = await req.json()
+  const {
+    storeId, title, ourPrice, currencyCode, vatIncluded,
+    shopifyProductId, shopifyVariantId, handle, imageUrl,
+    mapFloorPrice, mapEnabled,
+  } = await req.json()
+
   if (!storeId || !title) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   // Verify this store belongs to the user
@@ -27,9 +32,11 @@ export async function POST(req: NextRequest) {
     currency_code: currencyCode ?? 'USD',
     vat_included: typeof vatIncluded === 'boolean' ? vatIncluded : false,
     shopify_product_id: shopifyProductId ?? null,
+    shopify_variant_id: shopifyVariantId ?? null,
     handle: handle ?? null,
     image_url: imageUrl ?? null,
-    shopify_variant_id: shopifyVariantId ?? null,
+    map_floor_price: typeof mapFloorPrice === 'number' && mapFloorPrice > 0 ? mapFloorPrice : null,
+    map_enabled: typeof mapEnabled === 'boolean' ? mapEnabled : false,
   }
 
   let { data: product, error } = await supabase
@@ -39,13 +46,9 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error?.message?.includes("'vat_included'")) {
-    console.log('[products/add] vat_included column missing in products table, retrying without vat_included')
-    const { vat_included: _ignoredVatIncluded, ...payloadWithoutVat } = payload
-    const retry = await supabase
-      .from('products')
-      .insert(payloadWithoutVat)
-      .select()
-      .single()
+    console.log('[products/add] vat_included column missing, retrying without it')
+    const { vat_included: _v, ...payloadWithoutVat } = payload
+    const retry = await supabase.from('products').insert(payloadWithoutVat).select().single()
     product = retry.data
     error = retry.error
   }
