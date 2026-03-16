@@ -235,7 +235,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }, [products])
 
   const marketSummary = useMemo(() => {
-    const summary = { cheapest: 0, competitive: 0, overpriced: 0, no_data: 0 }
+    const summary = { cheapest: 0, competitive: 0, overpriced: 0, no_data: 0, map_violation: 0 }
     for (const product of products) {
       const position = productMarketPosition[product.id] ?? 'no_data'
       summary[position] += 1
