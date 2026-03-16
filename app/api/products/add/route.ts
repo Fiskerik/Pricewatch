@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     shopify_product_id: shopifyProductId ?? null,
     handle: handle ?? null,
     image_url: imageUrl ?? null,
+    shopify_variant_id: shopifyVariantId ?? null,
   }
 
   let { data: product, error } = await supabase
