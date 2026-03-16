@@ -274,3 +274,58 @@ export async function sendMapViolationAlert(params: MapViolationAlertParams): Pr
   if (result?.error) throw new Error(`Resend send failed: ${result.error.message}`)
   return { skipped: false, provider: 'resend', messageId: result?.data?.id ?? null, to, from, subject }
 }
+
+export async function sendAutoPriceSuggestion(params: AutoPriceSuggestionParams): Promise<EmailSendDebug> {
+  const { to, productTitle, currentPrice, suggestedPrice, lowestCompetitorPrice, currency = 'USD' } = params
+  const diff = currentPrice - suggestedPrice
+  const subject = params.applied
+  ? `Price updated: ${productTitle} → ${fmtPrice(suggestedPrice, currency)}`
+  : `Reprice suggested: ${productTitle} → ${fmtPrice(suggestedPrice, currency)}`
+  
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:32px 12px;background:#f4f4f5;font-family:Inter,system-ui,sans-serif;color:#18181b">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
+  <div style="background:#7c3aed;padding:24px 28px">
+    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
+${params.applied ? 'Price automatically updated' : 'Reprice opportunity'}</div>
+    <div style="font-size:22px;font-weight:800;color:#fff;margin:0">Reprice opportunity for ${productTitle}</div>
+  </div>
+  <div style="padding:24px 28px">
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+      <tr>
+        <td style="background:#f9f9fb;border-radius:10px;padding:14px;text-align:center;width:32%">
+          <div style="font-size:10px;color:#71717a;font-weight:600;text-transform:uppercase;margin-bottom:4px">Your Price</div>
+          <div style="font-size:20px;font-weight:700;color:#3f3f46">${fmtPrice(currentPrice, currency)}</div>
+        </td>
+        <td style="text-align:center;font-size:18px;color:#7c3aed;font-weight:800;width:4%">→</td>
+        <td style="background:#f5f3ff;border:2px solid #c4b5fd;border-radius:10px;padding:14px;text-align:center;width:32%">
+          <div style="font-size:10px;color:#7c3aed;font-weight:600;text-transform:uppercase;margin-bottom:4px">Suggested</div>
+          <div style="font-size:22px;font-weight:800;color:#7c3aed">${fmtPrice(suggestedPrice, currency)}</div>
+        </td>
+        <td style="text-align:center;font-size:18px;font-weight:800;width:4%"></td>
+        <td style="background:#f9f9fb;border-radius:10px;padding:14px;text-align:center;width:28%">
+          <div style="font-size:10px;color:#71717a;font-weight:600;text-transform:uppercase;margin-bottom:4px">Lowest Comp.</div>
+          <div style="font-size:20px;font-weight:700;color:#3f3f46">${fmtPrice(lowestCompetitorPrice, currency)}</div>
+        </td>
+      </tr>
+    </table>
+    <div style="background:#f5f3ff;border-radius:10px;padding:12px 16px;font-size:13px;color:#52525b;margin-bottom:22px">
+      Lowering your price by <strong>${fmtPrice(diff, currency)}</strong> would make you the cheapest option by your configured margin.
+    </div>
+    <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="display:block;background:#7c3aed;color:#fff;text-align:center;padding:14px 20px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px">
+      View Dashboard →
+    </a>
+  </div>
+</div>
+</body></html>`
+
+  const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
+  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  if (!apiKey) return { skipped: true, reason: 'missing_resend_api_key', provider: 'resend', messageId: null, to, from, subject }
+
+  const { Resend } = await import('resend')
+  const resend = new Resend(apiKey)
+  const result = await resend.emails.send({ from, to, subject, html })
+  if (result?.error) throw new Error(`Resend send failed: ${result.error.message}`)
+  return { skipped: false, provider: 'resend', messageId: result?.data?.id ?? null, to, from, subject }
+}
