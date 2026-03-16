@@ -104,9 +104,6 @@ async function renderWithBrowserless(url: string, timeoutMs: number): Promise<st
   return res.text()
 }
 
-// ── Domains that require residential proxies ─────────────────────────────────
-// These domains consistently block datacenter IPs. Using residential proxies
-// here prevents wasting credits on failed calls with silent 200 responses.
 const RESIDENTIAL_PROXY_DOMAINS = new Set([
   // Major retailers
   'amazon.com', 'amazon.co.uk', 'amazon.de', 'amazon.se', 'amazon.fr', 'amazon.it', 'amazon.es',
@@ -115,8 +112,12 @@ const RESIDENTIAL_PROXY_DOMAINS = new Set([
   'elgiganten.se', 'elgiganten.dk',
   'power.se', 'power.no', 'power.dk', 'power.fi',
   'mediamarkt.se', 'mediamarkt.de', 'mediamarkt.nl',
-  // Fashion
-  'asos.com', 'boozt.com', 'nelly.com',
+  // Fashion — H&M blocks datacenter IPs on all subdomains
+  'hm.com', 'www2.hm.com',
+  'asos.com', 'boozt.com', 'nelly.com', 'na-kd.com', 'ginatricot.com',
+  // Swedish/Nordic general retailers
+  'webhallen.com', 'inet.se', 'dustin.se', 'komplett.se', 'kjell.com',
+  'cdon.com', 'stadium.se', 'intersport.se',
 ])
 
 function requiresResidentialProxy(url: string): boolean {
