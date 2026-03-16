@@ -42,6 +42,8 @@ export async function PATCH(req: NextRequest) {
     currency_code: normalizeCurrencyCode(currencyCode),
     vat_included: typeof vatIncluded === 'boolean' ? vatIncluded : false,
     image_url: typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null,
+    map_floor_price: typeof mapFloorPrice === 'number' && mapFloorPrice > 0 ? mapFloorPrice : null,
+    map_enabled: typeof mapEnabled === 'boolean' ? mapEnabled : false,
   }
 
   let { data, error } = await supabase
