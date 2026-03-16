@@ -49,6 +49,14 @@ export async function PATCH(req: NextRequest) {
   if (typeof updatedCurrency === 'string' && updatedCurrency.trim()) {
     updatePayload.last_price_currency = updatedCurrency.trim().toUpperCase()
   }
+  if (typeof priceDecimalShift === 'number' && Number.isFinite(priceDecimalShift)) {
+  updatePayload.price_decimal_shift = Math.max(-6, Math.min(6, Math.trunc(priceDecimalShift)))
+  }
+  if (typeof priceCurrencyOverride === 'string' && priceCurrencyOverride.trim()) {
+    updatePayload.price_currency_override = priceCurrencyOverride.trim().toUpperCase()
+  } else if (priceCurrencyOverride === null) {
+    updatePayload.price_currency_override = null
+  }
 
   const { data: competitor, error } = await admin
     .from('competitor_urls')
