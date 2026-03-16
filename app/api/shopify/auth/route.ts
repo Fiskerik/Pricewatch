@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   // Build Shopify OAuth URL manually
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
   const apiKey = process.env.SHOPIFY_API_KEY!
-  const scopes = 'read_products'
+  const scopes = 'read_products,write_products'
   const appOrigin = appUrl ? new URL(appUrl).origin : req.nextUrl.origin
   const redirectUri = `${appOrigin}/api/shopify/callback`
   
