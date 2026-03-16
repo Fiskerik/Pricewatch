@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Product, CompetitorUrl, PriceHistory } from '@/types'
 import { formatMoney, SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/currency'
 import { applyVat, removeVat } from '@/lib/vat'
@@ -93,6 +93,7 @@ interface ConvertedCurrencyResponse {
 
 interface Props {
   product: Product
+  marketPosition?: 'cheapest' | 'competitive' | 'overpriced' | 'no_data'
   isExpanded: boolean
   onToggle: () => void
   onEditProduct: (product: Product) => void
@@ -114,21 +115,34 @@ interface Props {
   onRejectPrice: (competitorId: string) => void
 }
 
-function Sparkline({ history, currency }: { history: PriceHistory[]; currency: string }) {
-  const sorted = [...history].sort((a, b) => new Date(a.checked_at).getTime() - new Date(b.checked_at).getTime())
+function PriceHistoryChart({ history, currency }: { history: PriceHistory[]; currency: string }) {
+  const [zoomDays, setZoomDays] = useState(30)
+
+  const last30Days = useMemo(() => {
+    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000)
+    return [...history]
+      .filter(entry => new Date(entry.checked_at).getTime() >= cutoff)
+      .sort((a, b) => new Date(a.checked_at).getTime() - new Date(b.checked_at).getTime())
+  }, [history])
+
+  if (last30Days.length < 2) return null
+
+  const zoomedCutoff = Date.now() - (zoomDays * 24 * 60 * 60 * 1000)
+  const sorted = last30Days.filter(entry => new Date(entry.checked_at).getTime() >= zoomedCutoff)
   if (sorted.length < 2) return null
 
   const prices = sorted.map(h => h.price)
   const min = Math.min(...prices)
   const max = Math.max(...prices)
   const range = max - min || 1
-  const W = 160
-  const H = 40
-  const pad = 4
+  const W = 460
+  const H = 160
+  const padX = 34
+  const padY = 16
 
   const points = sorted.map((h, i) => {
-    const x = pad + (i / (sorted.length - 1)) * (W - pad * 2)
-    const y = H - pad - ((h.price - min) / range) * (H - pad * 2)
+    const x = padX + (i / (sorted.length - 1)) * (W - padX * 2)
+    const y = H - padY - ((h.price - min) / range) * (H - padY * 2)
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
 
@@ -140,21 +154,23 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
   const fmt = normalizeCurrencyCode(currency)
 
   return (
-    <div className="mt-2 px-1">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-gray-400 font-medium">Price history ({sorted.length} checks)</span>
-        <span className="text-[10px] font-bold" style={{ color }}>
+    <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+        <span className="text-xs text-gray-500 font-medium">Price history (last 30 days · {sorted.length} checks)</span>
+        <span className="text-xs font-bold" style={{ color }}>
           {trending === 'down' ? '↓' : trending === 'up' ? '↑' : '→'} {formatMoney(latest.price, fmt)}
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} className="overflow-visible">
         <defs>
-          <linearGradient id={`grad-${currency}`} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={`grad-${currency}-${zoomDays}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.15" />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <polyline points={`${pad},${H} ${points} ${W - pad},${H}`} fill={`url(#grad-${currency})`} stroke="none" />
+        <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#e5e7eb" strokeWidth="1" />
+        <line x1={padX} y1={padY} x2={padX} y2={H - padY} stroke="#e5e7eb" strokeWidth="1" />
+        <polyline points={`${padX},${H - padY} ${points} ${W - padX},${H - padY}`} fill={`url(#grad-${currency}-${zoomDays})`} stroke="none" />
         <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         {(() => {
           const last = points.split(' ').at(-1)?.split(',')
@@ -162,7 +178,22 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
           return <circle cx={last[0]} cy={last[1]} r="2.5" fill={color} />
         })()}
       </svg>
-      <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+      <div className="mt-2">
+        <label className="text-[11px] text-gray-500 flex items-center justify-between gap-2">
+          <span>Zoom window</span>
+          <span className="font-semibold text-gray-700">{zoomDays} days</span>
+        </label>
+        <input
+          type="range"
+          min={7}
+          max={30}
+          step={1}
+          value={zoomDays}
+          onChange={(event) => setZoomDays(Number(event.target.value))}
+          className="mt-1 w-full accent-black"
+        />
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-1.5">
         <span>{new Date(sorted[0].checked_at).toLocaleDateString()}</span>
         <span>{new Date(latest.checked_at).toLocaleDateString()}</span>
       </div>
@@ -171,7 +202,7 @@ function Sparkline({ history, currency }: { history: PriceHistory[]; currency: s
 }
 
 export default function ProductCard({
-  product, isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
+  product, marketPosition = 'no_data', isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
@@ -191,6 +222,22 @@ export default function ProductCard({
       ? (productVatIncluded ? product.our_price : applyVat(product.our_price, vatRate))
       : (productVatIncluded ? removeVat(product.our_price, vatRate) : product.our_price))
     : null
+
+  const marketPositionStyle = marketPosition === 'cheapest'
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    : marketPosition === 'competitive'
+      ? 'bg-amber-50 text-amber-700 border-amber-200'
+      : marketPosition === 'overpriced'
+        ? 'bg-rose-50 text-rose-700 border-rose-200'
+        : 'bg-gray-100 text-gray-600 border-gray-200'
+
+  const marketPositionLabel = marketPosition === 'cheapest'
+    ? 'Cheapest'
+    : marketPosition === 'competitive'
+      ? 'Competitive'
+      : marketPosition === 'overpriced'
+        ? 'Overpriced'
+        : 'No data'
 
   const handleCurrencyChange = async (currencyCode: string) => {
     const res = await fetch('/api/products/currency', {
@@ -222,6 +269,9 @@ export default function ProductCard({
             )}
             <span className="text-xs text-gray-500 leading-tight">
               {competitors.length} competitor{competitors.length !== 1 ? 's' : ''} tracked
+            </span>
+            <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${marketPositionStyle}`}>
+              Market position: {marketPositionLabel}
             </span>
           </div>
         </div>
@@ -401,7 +451,7 @@ export default function ProductCard({
 
                   {showHistory && historyPoints.length >= 2 && (
                     <div className="px-4 pb-3 border-t border-gray-100/80">
-                      <Sparkline history={historyPoints} currency={comp.last_price_currency || productCurrency} />
+                      <PriceHistoryChart history={historyPoints} currency={comp.last_price_currency || productCurrency} />
                     </div>
                   )}
                 </div>

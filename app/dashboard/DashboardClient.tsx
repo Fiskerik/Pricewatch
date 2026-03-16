@@ -33,6 +33,7 @@ interface PendingPrice {
 }
 type ViewMode = 'products' | 'competitors'
 type ProductLayout = 'list' | 'grid'
+type MarketPosition = 'cheapest' | 'competitive' | 'overpriced' | 'no_data'
 
 interface Props {
   user: User
@@ -192,6 +193,52 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }, [products])
 
   const selectedTestCompetitor = testableCompetitors.find(competitor => competitor.id === testCompetitorId) ?? null
+
+  const productMarketPosition = useMemo(() => {
+    const map: Record<string, MarketPosition> = {}
+
+    for (const product of products) {
+      const ourPrice = typeof product.our_price === 'number' && Number.isFinite(product.our_price) ? product.our_price : null
+      const competitorPrices = (product.competitor_urls ?? [])
+        .map(competitor => competitor.last_price)
+        .filter((price): price is number => typeof price === 'number' && Number.isFinite(price) && price > 0)
+
+      if (ourPrice == null || competitorPrices.length === 0) {
+        map[product.id] = 'no_data'
+        continue
+      }
+
+      const lowestCompetitor = Math.min(...competitorPrices)
+      if (ourPrice <= lowestCompetitor) {
+        map[product.id] = 'cheapest'
+        continue
+      }
+
+      const diffPct = ((ourPrice - lowestCompetitor) / lowestCompetitor) * 100
+      map[product.id] = diffPct <= 5 ? 'competitive' : 'overpriced'
+    }
+
+    return map
+  }, [products])
+
+  const marketSummary = useMemo(() => {
+    const summary = { cheapest: 0, competitive: 0, overpriced: 0, no_data: 0 }
+    for (const product of products) {
+      const position = productMarketPosition[product.id] ?? 'no_data'
+      summary[position] += 1
+    }
+
+    const considered = summary.cheapest + summary.competitive + summary.overpriced
+    const leader = considered === 0
+      ? 'No priced products yet'
+      : summary.cheapest >= summary.competitive && summary.cheapest >= summary.overpriced
+        ? 'Mostly cheapest'
+        : summary.competitive >= summary.overpriced
+          ? 'Mostly competitive'
+          : 'Mostly overpriced'
+
+    return { ...summary, leader }
+  }, [products, productMarketPosition])
 
   useEffect(() => {
     if (testableCompetitors.length === 0) {
@@ -510,6 +557,35 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           </div>
         </div>
 
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 mb-4 lg:mb-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs text-gray-400 font-medium mb-1">Market position summary</div>
+              <div className="text-xl sm:text-2xl font-extrabold text-gray-900">{marketSummary.leader}</div>
+              <div className="text-xs text-gray-400 mt-1">Across all tracked products with competitor pricing</div>
+            </div>
+            <span className="text-2xl">🎯</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <div className="text-[11px] text-emerald-700 font-semibold">Cheapest</div>
+              <div className="text-lg font-extrabold text-emerald-800">{marketSummary.cheapest}</div>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="text-[11px] text-amber-700 font-semibold">Competitive</div>
+              <div className="text-lg font-extrabold text-amber-800">{marketSummary.competitive}</div>
+            </div>
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+              <div className="text-[11px] text-rose-700 font-semibold">Overpriced</div>
+              <div className="text-lg font-extrabold text-rose-800">{marketSummary.overpriced}</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="text-[11px] text-gray-600 font-semibold">No data</div>
+              <div className="text-lg font-extrabold text-gray-700">{marketSummary.no_data}</div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5 lg:mb-7">
           {[
             { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
@@ -670,6 +746,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                   >
                     <ProductCard
                       product={product}
+                      marketPosition={productMarketPosition[product.id] ?? 'no_data'}
                       isExpanded={!!expandedProducts[product.id]}
                       onToggle={() => setExpandedProducts(prev => ({ ...prev, [product.id]: !prev[product.id] }))}
                       onEditProduct={() => setEditingProduct(product)}
