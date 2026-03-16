@@ -13,16 +13,13 @@ export default function ConnectShopifyPage() {
     setError(null)
     setLoading(true)
 
-    // Normalize: strip https://, trailing slashes, etc.
     let domain = shop.trim().toLowerCase()
     domain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
 
-    // Append .myshopify.com if not already present
     if (!domain.includes('.myshopify.com')) {
       domain = `${domain}.myshopify.com`
     }
 
-    // Basic validation
     if (!/^[a-z0-9-]+\.myshopify\.com$/.test(domain)) {
       setError('Please enter a valid Shopify store domain, e.g. my-store or my-store.myshopify.com')
       setLoading(false)
@@ -40,21 +37,19 @@ export default function ConnectShopifyPage() {
         </Link>
 
         <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
-          {/* Header */}
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-xl">🛍️</div>
             <div>
               <h1 className="text-lg font-extrabold tracking-tight">Connect Shopify Store</h1>
-              <p className="text-xs text-gray-500 mt-0.5">Sync your products automatically</p>
+              <p className="text-xs text-gray-500 mt-0.5">Sync your products and enable auto-pricing</p>
             </div>
           </div>
 
-          {/* Benefits */}
           <div className="bg-gray-50 rounded-xl p-4 mb-6 space-y-2">
             {[
               'All your products synced instantly',
               'Prices kept up to date automatically',
-              'No manual product entry needed',
+              'Auto-repricing for Pro & Business plans',
             ].map(b => (
               <div key={b} className="flex items-center gap-2 text-sm text-gray-600">
                 <span className="text-green-500 font-bold">✓</span> {b}
@@ -96,7 +91,8 @@ export default function ConnectShopifyPage() {
           </form>
 
           <p className="text-xs text-gray-400 text-center mt-4">
-            We only request <span className="font-medium">read_products</span> access. We never modify your store.
+            We request <span className="font-medium">read_products</span> and <span className="font-medium">write_products</span> access.
+            Write access is only used for auto-repricing on Pro/Business plans.
           </p>
         </div>
 
