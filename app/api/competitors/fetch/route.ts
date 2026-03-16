@@ -7,25 +7,16 @@ import { supabaseAdmin } from '@/lib/supabase'
 export async function POST(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
   const { data: { user } } = await supabase.auth.getUser()
-  const lastChecked = (competitor as any).last_checked_at
-  if (lastChecked) {
-    const minutesSince = (Date.now() - new Date(lastChecked).getTime()) / 60000
-    const cooldownMinutes = plan === 'free' ? 60 : plan === 'pro' ? 30 : 10
-    if (minutesSince < cooldownMinutes) {
-      return NextResponse.json({ 
-        error: `Please wait ${Math.ceil(cooldownMinutes - minutesSince)} more minutes before refreshing.` 
-      }, { status: 429 })
-    }
-  }
   
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { competitorId, preferredMetric } = await req.json()
   if (!competitorId) return NextResponse.json({ error: 'Missing competitorId' }, { status: 400 })
 
+  // 1. Fetch competitor first so we actually have the 'last_checked_at' data
   const { data: competitor, error: fetchError } = await supabase
     .from('competitor_urls')
-    .select('*, products(currency_code, store_id)')
+    .select('*, products(currency_code, store_id, stores(plan))') // Added nested plan fetch
     .eq('id', competitorId)
     .single()
 
@@ -33,6 +24,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Competitor not found' }, { status: 404 })
   }
 
+  // 2. Define plan and check cooldown
+  const plan = (competitor as any).products?.stores?.plan ?? 'free'
+  const lastChecked = (competitor as any).last_checked_at
+
+  if (lastChecked) {
+    const minutesSince = (Date.now() - new Date(lastChecked).getTime()) / 60000
+    const cooldownMinutes = plan === 'free' ? 60 : plan === 'pro' ? 30 : 10
+    
+    if (minutesSince < cooldownMinutes) {
+      return NextResponse.json({ 
+        error: `Please wait ${Math.ceil(cooldownMinutes - minutesSince)} more minutes before refreshing.` 
+      }, { status: 429 })
+    }
+  }
+
+  // 3. Verify ownership (store check)
   const { data: store } = await supabase
     .from('stores')
     .select('id')
