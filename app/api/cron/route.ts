@@ -130,12 +130,14 @@ export async function GET(req: NextRequest) {
           id, url, label, last_price, last_price_currency, selected_price_metric, mock_next_price, mock_price_enabled,
           last_stock_status,
           products (
-            id, title, our_price, currency_code, map_floor_price, map_enabled,
-            stores (
-              id, plan,
-              auth_users:user_id (email)
-            )
+          id, title, our_price, currency_code, map_floor_price, map_enabled,
+          auto_price_enabled, auto_price_undercut_type, auto_price_undercut_value,
+          shopify_variant_id,
+          stores (
+            id, plan, shop_domain, access_token,
+            auth_users:user_id (email)
           )
+        )
         )
       `)
       .in('status', ['queued', 'retrying'])
@@ -421,4 +423,106 @@ if (mapEnabled && mapFloor !== null && scrapeResult.price !== null && scrapeResu
   }
 
   return NextResponse.json({ success: true, timestamp: now, ...results })
+}
+
+// ── Auto-price execution (Pro/Business + Shopify connected) ───────────────
+const autoPriceEnabled = product?.auto_price_enabled === true
+const undercutType = product?.auto_price_undercut_type as 'percent' | 'fixed' | null
+const undercutValue = product?.auto_price_undercut_value
+  ? parseFloat(String(product.auto_price_undercut_value))
+  : null
+const isPro = store?.plan === 'pro' || store?.plan === 'business'
+const hasShopify = store?.shop_domain && store?.access_token && product?.shopify_variant_id
+
+if (autoPriceEnabled && isPro && hasShopify && undercutType && undercutValue !== null) {
+  const { data: allComps } = await admin
+    .from('competitor_urls')
+    .select('last_price')
+    .eq('product_id', product.id)
+    .not('last_price', 'is', null)
+
+  const prices = (allComps ?? [])
+    .map((c: any) => parseFloat(String(c.last_price)))
+    .filter((p: number) => Number.isFinite(p) && p > 0)
+
+  if (scrapeResult.price !== null) prices.push(scrapeResult.price)
+
+  if (prices.length > 0) {
+    const lowestCompetitor = Math.min(...prices)
+    const mapFloor = product?.map_floor_price
+      ? parseFloat(String(product.map_floor_price))
+      : null
+
+    let suggested: number
+    if (undercutType === 'percent') {
+      suggested = lowestCompetitor * (1 - undercutValue / 100)
+    } else {
+      suggested = lowestCompetitor - undercutValue
+    }
+    suggested = Math.round(suggested * 100) / 100
+
+    // Clamp to MAP floor
+    if (mapFloor !== null && suggested < mapFloor) {
+      suggested = mapFloor
+    }
+
+    // Only reprice if it's meaningfully different from current price
+    const currentPrice = product?.our_price
+      ? parseFloat(String(product.our_price))
+      : null
+
+    const shouldReprice = suggested > 0 &&
+      (currentPrice === null || Math.abs(suggested - currentPrice) / currentPrice > 0.005)
+
+    if (shouldReprice) {
+      const updateResult = await updateShopifyVariantPrice(
+        store.shop_domain,
+        store.access_token,
+        product.shopify_variant_id,
+        suggested,
+      )
+
+      if (updateResult.success) {
+        // Write the new price back to our DB too
+        await admin
+          .from('products')
+          .update({
+            our_price: suggested,
+            auto_price_applied: suggested,
+            last_auto_priced_at: now,
+          })
+          .eq('id', product.id)
+
+        console.log('[cron] auto-price applied', {
+          productId: product.id,
+          oldPrice: currentPrice,
+          newPrice: suggested,
+          lowestCompetitor,
+        })
+
+        if (userEmail && product?.title) {
+          try {
+            await sendAutoPriceSuggestion({
+              to: userEmail,
+              productTitle: product.title,
+              currentPrice: currentPrice ?? 0,
+              suggestedPrice: suggested,
+              lowestCompetitorPrice: lowestCompetitor,
+              currency: product.currency_code ?? 'USD',
+              applied: true,  // tells the email it was actually applied
+            })
+          } catch (emailErr) {
+            results.errors.push(`Auto-price email failed for ${product.id}: ${String(emailErr)}`)
+          }
+        }
+      } else {
+        console.error('[cron] auto-price Shopify update failed', {
+          productId: product.id,
+          variantId: product.shopify_variant_id,
+          error: updateResult.error,
+        })
+        results.errors.push(`Auto-price failed for product ${product.id}: ${updateResult.error}`)
+      }
+    }
+  }
 }
