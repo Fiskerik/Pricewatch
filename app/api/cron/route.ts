@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { scrapePrice } from '@/lib/scraper'
 import { sendPriceAlert, sendStockAlert, sendMapViolationAlert } from '@/lib/email'
 import { FailureReasonCode } from '@/lib/scraper/shared'
+import { updateShopifyVariantPrice } from '@/lib/shopify'
 
 const MAX_ENQUEUE_PER_RUN = 500
 const PROCESS_BATCH_SIZE = 100
