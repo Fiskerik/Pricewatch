@@ -361,6 +361,13 @@ export default function ProductCard({
             const isPendingPreview = confirmedPrice === null && pendingDisplayPrice !== null
 
             const cheaper = priceWithVat !== null && ourPrice !== null && priceWithVat < ourPrice
+            const mapFloor = product.map_enabled && product.map_floor_price 
+              ? product.map_floor_price 
+              : null
+            
+            // Use the raw stored price for MAP comparison (not VAT-adjusted)
+            const rawCompPrice = comp.last_price
+            const isMapViolation = mapFloor !== null && rawCompPrice !== null && rawCompPrice < mapFloor
             const historyPoints = comp.price_history ?? []
             // Show history button with 1+ entries (chart handles single-point case)
             const hasHistory = historyPoints.length >= 1
@@ -468,8 +475,12 @@ export default function ProductCard({
                             )}
                           </div>
                           {!isPendingPreview && (
-                            <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
-                              {cheaper ? 'CHEAPER' : 'HIGHER'}
+                            <div className={`text-xs font-semibold ${
+                              isMapViolation 
+                                ? 'text-red-600' 
+                                : cheaper ? 'text-red-400' : 'text-green-500'
+                            }`}>
+                              {isMapViolation ? '⚠ MAP VIOLATION' : cheaper ? 'CHEAPER' : 'HIGHER'}
                             </div>
                           )}
                           {isPendingPreview && (
