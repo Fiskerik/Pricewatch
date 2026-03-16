@@ -24,8 +24,14 @@ export async function POST(req: NextRequest) {
 
   let normalizedUrl = ''
   try {
-    normalizedUrl = normalizeCompetitorUrl(cleanUrl(String(url)))
-  } catch {
+    const cleaned = cleanUrl(String(url))
+    normalizedUrl = normalizeCompetitorUrl(cleaned)
+  } catch (err) {
+    console.error('[competitors/add] URL normalization failed', {
+      rawUrl: url,
+      error: String(err),
+      cleanUrlType: typeof cleanUrl,
+    })
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
 
