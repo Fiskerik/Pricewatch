@@ -5,11 +5,90 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { cleanUrl } from '@/lib/scraper'
 import { evaluateCompetitorMatch, runCompetitorPreflight } from '@/lib/competitorMatch'
 
-function normalizeCompetitorUrl(rawUrl: string): string {
-  const parsed = new URL(rawUrl.trim())
+// ── Tracking params to strip from any URL ───────────────────────────────────
+const TRACKING_PARAMS = [
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'fbclid', 'gclid', 'gad_source', 'msclkid', 'pjclid',
+  'ref', 'source', '_ga', '_gl', 'mc_cid', 'mc_eid', 'affiliate',
+]
+
+// ── Robust URL normalizer ────────────────────────────────────────────────────
+// Accepts messy user input: missing protocol, HTML entities, surrounding
+// quotes, tracking params, mixed text with an embedded URL, etc.
+function normalizeCompetitorUrl(rawInput: string): string {
+  if (!rawInput || typeof rawInput !== 'string') {
+    throw new Error('No URL provided')
+  }
+
+  let input = rawInput.trim()
+
+  // 1. Strip surrounding quotes or backticks (common from copy-paste)
+  input = input.replace(/^["'`]+|["'`]+$/g, '').trim()
+
+  // 2. Decode common HTML entities (&amp; → &, &#nnn; → char, etc.)
+  input = input
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+
+  // 3. If the string contains spaces, try to extract an embedded URL first
+  //    before giving up (handles "Buy here: https://shop.com/product").
+  if (input.includes(' ')) {
+    const embeddedUrl = input.match(/https?:\/\/[^\s"'<>()[\]{}\\]+/i)
+    if (embeddedUrl) {
+      input = embeddedUrl[0]
+    } else {
+      // No embedded URL — collapse spaces as a last resort (encoded spaces)
+      input = input.replace(/\s+/g, '%20')
+    }
+  }
+
+  // 4. Handle protocol-relative URLs (//example.com/path)
+  if (input.startsWith('//')) {
+    input = 'https:' + input
+  }
+
+  // 5. Auto-prepend https:// when the protocol is missing entirely
+  if (!/^https?:\/\//i.test(input)) {
+    // Looks like a bare domain or domain/path — add the protocol
+    if (/^[a-z0-9]([a-z0-9-]*\.)+[a-z]{2,}/i.test(input)) {
+      input = 'https://' + input
+    } else {
+      throw new Error('Not a recognisable URL — please paste a link that starts with https://')
+    }
+  }
+
+  // 6. Parse and hard-validate
+  let parsed: URL
+  try {
+    parsed = new URL(input)
+  } catch {
+    throw new Error('Could not parse as a URL — please paste a full product page link')
+  }
+
+  // 7. Only http / https are valid for scraping
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only http:// and https:// URLs are supported')
+  }
+
+  // 8. Must have a real hostname with at least one dot
+  if (!parsed.hostname || !parsed.hostname.includes('.') || parsed.hostname.length < 4) {
+    throw new Error('URL does not appear to be a valid website address')
+  }
+
+  // 9. Strip the fragment — useless for price tracking
   parsed.hash = ''
+
+  // 10. Strip all known tracking query parameters
+  TRACKING_PARAMS.forEach(p => parsed.searchParams.delete(p))
+
+  // 11. Normalize path — strip trailing slashes but keep root /
   const normalizedPath = parsed.pathname.replace(/\/+$/, '')
   parsed.pathname = normalizedPath || '/'
+
   return parsed.toString()
 }
 
@@ -24,15 +103,14 @@ export async function POST(req: NextRequest) {
 
   let normalizedUrl = ''
   try {
-    const cleaned = cleanUrl(String(url))
-    normalizedUrl = normalizeCompetitorUrl(cleaned)
+    normalizedUrl = normalizeCompetitorUrl(String(url))
   } catch (err) {
-    console.error('[competitors/add] URL normalization failed', {
+    const message = err instanceof Error ? err.message : 'Invalid URL'
+    console.log('[competitors/add] URL normalization failed', {
       rawUrl: url,
       error: String(err),
-      cleanUrlType: typeof cleanUrl,
     })
-    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
+    return NextResponse.json({ error: message }, { status: 400 })
   }
 
   const { data: product } = await supabase
@@ -72,6 +150,7 @@ export async function POST(req: NextRequest) {
     matchConfidence = 0.2
     console.log('[competitors/add] preflight failed', { productId, normalizedUrl, error: String(err) })
   }
+
   const { data: competitor, error } = await admin
     .from('competitor_urls')
     .insert({
@@ -89,9 +168,18 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) {
-    console.error('[competitors/add] insert failed', { userId: user.id, productId, normalizedUrl, message: error.message, code: error.code })
+    console.error('[competitors/add] insert failed', {
+      userId: user.id,
+      productId,
+      normalizedUrl,
+      message: error.message,
+      code: error.code,
+    })
     if (error.code === '23505') {
-      return NextResponse.json({ error: 'This competitor URL is already added for this product.' }, { status: 409 })
+      return NextResponse.json(
+        { error: 'This competitor URL is already added for this product.' },
+        { status: 409 },
+      )
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
