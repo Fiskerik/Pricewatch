@@ -6,6 +6,53 @@ import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
+async function ensureGdprWebhookSubscriptions({ shop, accessToken, appOrigin }: { shop: string, accessToken: string, appOrigin: string }) {
+  const callbackBase = `${appOrigin}/api/shopify/webhooks`
+  const targets = [
+    { topic: 'CUSTOMERS_REDACT', callback: `${callbackBase}/customers-redact` },
+    { topic: 'SHOP_REDACT', callback: `${callbackBase}/shop-redact` },
+    { topic: 'CUSTOMERS_DATA_REQUEST', callback: `${callbackBase}/customers-data-request` },
+  ]
+
+  for (const target of targets) {
+    const mutation = `
+      mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $callbackUrl: URL!) {
+        webhookSubscriptionCreate(
+          topic: $topic,
+          webhookSubscription: { callbackUrl: $callbackUrl, format: JSON }
+        ) {
+          userErrors { field message }
+        }
+      }
+    `
+
+    const registerRes = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      },
+      body: JSON.stringify({
+        query: mutation,
+        variables: {
+          topic: target.topic,
+          callbackUrl: target.callback,
+        },
+      }),
+    })
+
+    const registerData = await registerRes.json()
+    const userErrors = registerData?.data?.webhookSubscriptionCreate?.userErrors ?? []
+    if (!registerRes.ok || userErrors.length > 0) {
+      console.warn('[shopify/callback] GDPR webhook registration warning', {
+        shop,
+        topic: target.topic,
+        userErrors,
+      })
+    }
+  }
+}
+
 export async function GET(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
   const { data: { user } } = await supabase.auth.getUser()
@@ -116,7 +163,12 @@ export async function GET(req: NextRequest) {
       store = newStore
     }
 
-    // 4. Fetch and sync products
+    // 4. Register GDPR webhooks
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    const appOrigin = appUrl ? new URL(appUrl).origin : req.nextUrl.origin
+    await ensureGdprWebhookSubscriptions({ shop: String(shop), accessToken: access_token, appOrigin })
+
+    // 5. Fetch and sync products
     const productsResponse = await fetch(
       `https://${shop}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images,variants`,
       {

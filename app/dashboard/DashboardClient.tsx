@@ -580,7 +580,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               <div className="text-xl sm:text-2xl font-extrabold text-gray-900">{marketSummary.leader}</div>
               <div className="text-xs text-gray-400 mt-1">Across all tracked products with competitor pricing</div>
             </div>
-            <span className="text-2xl">🎯</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
@@ -604,9 +603,9 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5 lg:mb-7">
           {[
-            { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs`, icon: '📦' },
-            { label: 'Changes Today', value: changedToday, sub: 'price changes', icon: '📊', highlight: changedToday > 0 },
-            { label: 'Alerts Sent', value: alerts.length, sub: 'recent alerts', icon: '🔔', wide: true },
+            { label: 'Products Tracked', value: products.length, sub: `${totalCompetitors} competitor URLs` },
+            { label: 'Changes Today', value: changedToday, sub: 'price changes', highlight: changedToday > 0 },
+            { label: 'Alerts Sent', value: alerts.length, sub: 'recent alerts', wide: true },
           ].map(stat => (
             <div key={stat.label} className={`bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 ${"wide" in stat && stat.wide ? "col-span-2 lg:col-span-1" : ""}`}>
               <div className="flex justify-between items-start">
@@ -615,7 +614,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                   <div className={`text-2xl sm:text-3xl font-extrabold ${'highlight' in stat && stat.highlight ? 'text-red-500' : 'text-gray-900'}`}>{stat.value}</div>
                   <div className="text-xs text-gray-400 mt-1">{stat.sub}</div>
                 </div>
-                <span className="text-2xl">{stat.icon}</span>
               </div>
             </div>
           ))}

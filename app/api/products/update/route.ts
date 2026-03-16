@@ -8,7 +8,10 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
- const { productId, title, ourPrice, currencyCode, vatIncluded, imageUrl, mapFloorPrice, mapEnabled } = await req.json()
+ const {
+   productId, title, ourPrice, currencyCode, vatIncluded, imageUrl, mapFloorPrice, mapEnabled,
+   autoPriceEnabled, autoPriceUndercutType, autoPriceUndercutValue,
+ } = await req.json()
   if (!productId || !title) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   const { data: product, error: productError } = await supabase
@@ -44,6 +47,11 @@ export async function PATCH(req: NextRequest) {
     image_url: typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null,
     map_floor_price: typeof mapFloorPrice === 'number' && mapFloorPrice > 0 ? mapFloorPrice : null,
     map_enabled: typeof mapEnabled === 'boolean' ? mapEnabled : false,
+    auto_price_enabled: typeof autoPriceEnabled === 'boolean' ? autoPriceEnabled : false,
+    auto_price_undercut_type: autoPriceEnabled && (autoPriceUndercutType === 'percent' || autoPriceUndercutType === 'fixed') ? autoPriceUndercutType : null,
+    auto_price_undercut_value: autoPriceEnabled && typeof autoPriceUndercutValue === 'number' && Number.isFinite(autoPriceUndercutValue)
+      ? autoPriceUndercutValue
+      : null,
   }
 
   let { data, error } = await supabase
