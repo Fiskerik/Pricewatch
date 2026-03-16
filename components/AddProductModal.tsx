@@ -366,6 +366,38 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
             />
           </div>
 
+          {/* MAP Floor Price */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mapEnabled}
+                onChange={e => setMapEnabled(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Enable MAP monitoring
+            </label>
+            {mapEnabled && (
+              <div>
+                <label className="text-xs font-semibold text-gray-700 block mb-1.5 uppercase tracking-wide">
+                  MAP Floor Price *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={mapFloorPrice}
+                  onChange={e => setMapFloorPrice(e.target.value)}
+                  placeholder="e.g. 299.00"
+                  className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Alert me when any reseller advertises below this price.
+                </p>
+              </div>
+            )}
+          </div>
+
 
           <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
             <input
