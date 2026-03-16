@@ -198,7 +198,16 @@ export async function GET(req: NextRequest) {
           : await scrapePrice(comp.url, product?.currency_code ?? 'USD', {
               preferredMetric: comp.selected_price_metric ?? null,
             })
-
+        const savedDecimalShift = (comp as any).price_decimal_shift ?? 0
+        const savedCurrencyOverride = (comp as any).price_currency_override ?? null
+        
+        if (scrapeResult.price !== null && savedDecimalShift !== 0) {
+          scrapeResult.price = scrapeResult.price / Math.pow(10, savedDecimalShift)
+          scrapeResult.price = Math.round(scrapeResult.price * 1_000_000) / 1_000_000
+        }
+        if (savedCurrencyOverride && scrapeResult.price !== null) {
+          scrapeResult.scrapedCurrency = savedCurrencyOverride
+        }
         if (hasMockPrice) {
           console.log('[cron] using mock override price', {
             competitorId: comp.id,
