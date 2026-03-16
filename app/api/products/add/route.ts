@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { storeId, title, ourPrice, currencyCode, vatIncluded, shopifyProductId, handle, imageUrl } = await req.json()
+  const { storeId, title, ourPrice, currencyCode, vatIncluded, shopifyProductId, handle, imageUrl, mapFloorPrice, mapEnabled } = await req.json()
   if (!storeId || !title) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   // Verify this store belongs to the user
