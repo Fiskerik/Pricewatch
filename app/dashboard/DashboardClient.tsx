@@ -196,7 +196,16 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
   const productMarketPosition = useMemo(() => {
     const map: Record<string, MarketPosition> = {}
-
+    const hasMapViolation = product.map_enabled && (product.competitor_urls ?? []).some(c => 
+      c.last_price !== null && 
+      product.map_floor_price !== null && 
+      c.last_price < product.map_floor_price
+    )
+    
+    if (hasMapViolation) {
+      map[product.id] = 'map_violation' // add this new status
+      continue
+    }
     for (const product of products) {
       const ourPrice = typeof product.our_price === 'number' && Number.isFinite(product.our_price) ? product.our_price : null
       const competitorPrices = (product.competitor_urls ?? [])
