@@ -18,7 +18,7 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { competitorId, url, label, updatedPrice, updatedCurrency, selectedMetric } = await req.json()
+const { competitorId, url, label, updatedPrice, updatedCurrency, selectedMetric, priceDecimalShift, priceCurrencyOverride } = await req.json()
   if (!competitorId || !url) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   let normalizedUrl = ''
