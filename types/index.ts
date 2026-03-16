@@ -28,6 +28,8 @@ export interface CompetitorUrl {
   id: string
   product_id: string
   url: string
+  price_decimal_shift?: number | null      
+  price_currency_override?: string | null  
   label: string | null
   last_price: number | null
   vat_included?: boolean | null
