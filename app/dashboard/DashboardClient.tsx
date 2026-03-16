@@ -382,6 +382,8 @@ export default function DashboardClient({ user, store, initialProducts, initialA
         label: competitor.label,
         updatedPrice: finalPrice,
         updatedCurrency: finalCurrency,
+        priceDecimalShift: pending.decimalShift,       
+        priceCurrencyOverride: pending.currency || null, 
         selectedMetric: pending.selectedMetric,
       }),
     }).catch(() => {})
