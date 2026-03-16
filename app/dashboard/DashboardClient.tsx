@@ -362,7 +362,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setProducts(prev => prev.map(p => ({
       ...p,
       competitor_urls: (p.competitor_urls ?? []).map(c =>
-        c.id === id ? { ...c, last_price: finalPrice, last_price_currency: finalCurrency, last_checked_at: new Date().toISOString() } : c
+        c.id === id ? { ...c, last_price: finalPrice, last_price_currency: finalCurrency, last_checked_at: new Date().toISOString(), price_decimal_shift: pending.decimalShift, price_currency_override: pending.currency || null } : c
       ),
     })))
 
