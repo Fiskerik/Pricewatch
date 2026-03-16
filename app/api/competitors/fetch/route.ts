@@ -52,42 +52,42 @@ export async function POST(req: NextRequest) {
   })
 
   const updatePayload: Record<string, unknown> = { last_checked_at: now }
-
-if (result.stockStatus !== 'unknown') {
-  const previousStockStatus = (competitor as any).last_stock_status
-  updatePayload.last_stock_status = result.stockStatus
-  if (previousStockStatus && previousStockStatus !== result.stockStatus) {
-    updatePayload.last_stock_changed_at = now
-  }
-}
-
-if (result.price !== null) {
-  const previousPrice = competitor.last_price
-  updatePayload.last_price = result.price
-  updatePayload.last_price_currency = result.scrapedCurrency ?? targetCurrency
-  if (previousPrice !== null && previousPrice !== result.price) {
-    updatePayload.last_changed_at = now
-    updatePayload.previous_price = previousPrice
-  }
-
   const supabaseAdminClient = supabaseAdmin() as any
-  await supabaseAdminClient
-    .from('price_history')
-    .insert({
-      competitor_url_id: competitorId,
-      price: result.price,
-      checked_at: now,
-    })
-    .then(() => {
-      console.log('[competitors/fetch] price_history row written', { competitorId, price: result.price })
-    })
-    .catch((err: any) => {
-      // Non-fatal — don't fail the whole request if history insert fails
-      console.warn('[competitors/fetch] price_history insert failed', { competitorId, error: String(err) })
-    })
-}
 
-  const { data: updated, error: updateError } = await supabase
+  if (result.stockStatus !== 'unknown') {
+    const previousStockStatus = (competitor as any).last_stock_status
+    updatePayload.last_stock_status = result.stockStatus
+    if (previousStockStatus && previousStockStatus !== result.stockStatus) {
+      updatePayload.last_stock_changed_at = now
+    }
+  }
+
+  if (result.price !== null) {
+    const previousPrice = competitor.last_price
+    updatePayload.last_price = result.price
+    updatePayload.last_price_currency = result.scrapedCurrency ?? targetCurrency
+    if (previousPrice !== null && previousPrice !== result.price) {
+      updatePayload.last_changed_at = now
+      updatePayload.previous_price = previousPrice
+    }
+
+    await supabaseAdminClient
+      .from('price_history')
+      .insert({
+        competitor_url_id: competitorId,
+        price: result.price,
+        checked_at: now,
+      })
+      .then(() => {
+        console.log('[competitors/fetch] price_history row written', { competitorId, price: result.price })
+      })
+      .catch((err: any) => {
+        // Non-fatal — don't fail the whole request if history insert fails
+        console.warn('[competitors/fetch] price_history insert failed', { competitorId, error: String(err) })
+      })
+  }
+
+  const { data: updated, error: updateError } = await supabaseAdminClient
     .from('competitor_urls')
     .update(updatePayload)
     .eq('id', competitorId)
@@ -95,6 +95,11 @@ if (result.price !== null) {
     .single()
 
   if (updateError) {
+    console.error('[competitors/fetch] competitor update failed', {
+      competitorId,
+      updatePayload,
+      error: updateError,
+    })
     return NextResponse.json({ error: 'Failed to update competitor' }, { status: 500 })
   }
 
