@@ -327,12 +327,14 @@ export default function ProductCard({
 
       {isExpanded && (
         <div className="border-t border-gray-100 px-3 pb-3 pt-3 space-y-2">
-          <div className="pb-1">
-            <label className="text-xs text-gray-500 mr-2">Product currency:</label>
+          <div className="mt-2 flex items-center gap-2">
+            <label className="text-xs text-gray-700">
+              Currency <span className="text-[10px] text-amber-600 font-semibold">(💾 saved as origin)</span>:
+            </label>
             <select
-              value={productCurrency}
-              onChange={e => handleCurrencyChange(e.target.value)}
-              className="text-xs border border-gray-200 rounded-md px-2 py-1 outline-none focus:border-black"
+              value={normalizeCurrencyCode(pending.currency)}
+              onChange={(e) => onPendingCurrencyChange(comp.id, e.target.value)}
+              className="text-xs border border-amber-300 rounded-md px-2 py-1 outline-none focus:border-amber-500 bg-white"
             >
               {SUPPORTED_CURRENCIES.map(code => <option key={code} value={code}>{code}</option>)}
             </select>
@@ -554,42 +556,49 @@ export default function ProductCard({
                           </label>
                         )}
 
-                        <div className="mt-3 rounded-lg border border-amber-200/80 bg-white/70 px-2.5 py-2">
-                          <div className="text-[11px] font-semibold text-amber-800 mb-1">
-                            Decimal position
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => onPendingDecimalShift(comp.id, pending.decimalShift + 1)}
-                              className="text-xs font-semibold border border-amber-300 text-amber-700 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-colors"
-                              title="Move decimal one step to the left"
-                            >
-                              Left
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onPendingDecimalShift(comp.id, pending.decimalShift - 1)}
-                              className="text-xs font-semibold border border-amber-300 text-amber-700 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-colors"
-                              title="Move decimal one step to the right"
-                            >
-                              Right
-                            </button>
-                            {pending.decimalShift !== 0 && (
-                              <button
-                                type="button"
-                                onClick={() => onPendingDecimalShift(comp.id, 0)}
-                                className="text-xs font-semibold border border-gray-300 text-gray-600 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
-                                title="Reset decimal position"
-                              >
-                                Reset
-                              </button>
-                            )}
-                            <span className="text-[11px] text-gray-500">
-                              shift: {pending.decimalShift}
-                            </span>
-                          </div>
-                        </div>
+                        {/* ── Decimal position ─────────────────────────────────── */}
+<div className="mt-3 rounded-lg border border-amber-200/80 bg-white/70 px-2.5 py-2">
+  <div className="text-[11px] font-semibold text-amber-800 mb-0.5">
+    Decimal position
+  </div>
+  <div className="text-[10px] text-amber-600 mb-1.5">
+    💾 Saved — applied automatically on every future fetch
+  </div>
+  <div className="flex items-center gap-2">
+    <button
+      type="button"
+      onClick={() => onPendingDecimalShift(comp.id, pending.decimalShift + 1)}
+      className="text-xs font-semibold border border-amber-300 text-amber-700 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-colors"
+      title="Divide by 10 (move decimal left)"
+    >
+      ÷10
+    </button>
+    <button
+      type="button"
+      onClick={() => onPendingDecimalShift(comp.id, pending.decimalShift - 1)}
+      className="text-xs font-semibold border border-amber-300 text-amber-700 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-colors"
+      title="Multiply by 10 (move decimal right)"
+    >
+      ×10
+    </button>
+    {pending.decimalShift !== 0 && (
+      <button
+        type="button"
+        onClick={() => onPendingDecimalShift(comp.id, 0)}
+        className="text-xs font-semibold border border-gray-300 text-gray-600 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
+      >
+        Reset
+      </button>
+    )}
+    <span className="text-[11px] text-gray-500">
+      {pending.decimalShift === 0
+        ? 'no adjustment'
+        : pending.decimalShift > 0
+          ? `÷${Math.pow(10, pending.decimalShift).toLocaleString()} (${pending.rawPrice} → ${pending.price})`
+          : `×${Math.pow(10, -pending.decimalShift).toLocaleString()} (${pending.rawPrice} → ${pending.price})`}
+    </span>
+  </div>
+</div>
 
                         {topCandidates.length > 0 && (
                           <div className="mt-3 space-y-1.5">
