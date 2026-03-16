@@ -125,13 +125,36 @@ function PriceHistoryChart({ history, currency }: { history: PriceHistory[]; cur
       .sort((a, b) => new Date(a.checked_at).getTime() - new Date(b.checked_at).getTime())
   }, [history])
 
-  if (last30Days.length < 2) return null
+  // Need at least 1 point to render anything
+  if (last30Days.length < 1) return null
+
+  const fmt = normalizeCurrencyCode(currency)
+
+  // Single data point — show a simple price badge, no chart
+  if (last30Days.length === 1) {
+    const single = last30Days[0]
+    return (
+      <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-gray-500 font-medium">Price recorded</span>
+          <span className="text-xs font-bold text-gray-700">
+            {formatMoney(single.price, fmt)}
+          </span>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-1">
+          {new Date(single.checked_at).toLocaleString()} · Refresh again to start building history
+        </p>
+      </div>
+    )
+  }
 
   const zoomedCutoff = Date.now() - (zoomDays * 24 * 60 * 60 * 1000)
   const sorted = last30Days.filter(entry => new Date(entry.checked_at).getTime() >= zoomedCutoff)
-  if (sorted.length < 2) return null
 
-  const prices = sorted.map(h => h.price)
+  // Not enough points in the zoom window — fall back to all available
+  const chartData = sorted.length >= 2 ? sorted : last30Days
+
+  const prices = chartData.map(h => h.price)
   const min = Math.min(...prices)
   const max = Math.max(...prices)
   const range = max - min || 1
@@ -140,23 +163,21 @@ function PriceHistoryChart({ history, currency }: { history: PriceHistory[]; cur
   const padX = 34
   const padY = 16
 
-  const points = sorted.map((h, i) => {
-    const x = padX + (i / (sorted.length - 1)) * (W - padX * 2)
+  const points = chartData.map((h, i) => {
+    const x = padX + (i / (chartData.length - 1)) * (W - padX * 2)
     const y = H - padY - ((h.price - min) / range) * (H - padY * 2)
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
 
-  const latest = sorted[sorted.length - 1]
-  const prev = sorted[sorted.length - 2]
+  const latest = chartData[chartData.length - 1]
+  const prev = chartData[chartData.length - 2]
   const trending = latest.price < prev.price ? 'down' : latest.price > prev.price ? 'up' : 'flat'
   const color = trending === 'down' ? '#16a34a' : trending === 'up' ? '#dc2626' : '#6b7280'
-
-  const fmt = normalizeCurrencyCode(currency)
 
   return (
     <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-        <span className="text-xs text-gray-500 font-medium">Price history (last 30 days · {sorted.length} checks)</span>
+        <span className="text-xs text-gray-500 font-medium">Price history (last 30 days · {chartData.length} checks)</span>
         <span className="text-xs font-bold" style={{ color }}>
           {trending === 'down' ? '↓' : trending === 'up' ? '↑' : '→'} {formatMoney(latest.price, fmt)}
         </span>
@@ -194,7 +215,7 @@ function PriceHistoryChart({ history, currency }: { history: PriceHistory[]; cur
         />
       </div>
       <div className="flex justify-between text-[10px] text-gray-400 mt-1.5">
-        <span>{new Date(sorted[0].checked_at).toLocaleDateString()}</span>
+        <span>{new Date(chartData[0].checked_at).toLocaleDateString()}</span>
         <span>{new Date(latest.checked_at).toLocaleDateString()}</span>
       </div>
     </div>
@@ -331,11 +352,29 @@ export default function ProductCard({
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
             const includesVat = competitorVatIncluded[comp.id] ?? comp.vat_included ?? true
             const saleActive = isSaleMetric(pending?.selectedMetric ?? comp.selected_price_metric)
-            const priceWithVat = comp.last_price !== null
-              ? (showVat ? (includesVat ? comp.last_price : applyVat(comp.last_price, vatRate)) : (includesVat ? removeVat(comp.last_price, vatRate) : comp.last_price))
+
+            // ── Price display logic ──────────────────────────────────────────
+            // Priority: confirmed last_price → pending price (fetched but not yet confirmed)
+            // This ensures "No price yet" never shows when a price was just fetched
+            const confirmedPrice = comp.last_price !== null
+              ? (showVat
+                ? (includesVat ? comp.last_price : applyVat(comp.last_price, vatRate))
+                : (includesVat ? removeVat(comp.last_price, vatRate) : comp.last_price))
               : null
+
+            // Fallback: use the pending price if last_price is still null
+            // (happens for newly added competitors mid-confirmation flow)
+            const pendingDisplayPrice = (confirmedPrice === null && pending)
+              ? (showVat ? applyVat(pending.price, vatRate) : pending.price)
+              : null
+
+            const priceWithVat = confirmedPrice ?? pendingDisplayPrice
+            const isPendingPreview = confirmedPrice === null && pendingDisplayPrice !== null
+
             const cheaper = priceWithVat !== null && ourPrice !== null && priceWithVat < ourPrice
             const historyPoints = comp.price_history ?? []
+            // Show history button with 1+ entries (chart handles single-point case)
+            const hasHistory = historyPoints.length >= 1
             const showHistory = !!expandedHistory[comp.id]
             const compCurrency = normalizeCurrencyCode(comp.last_price_currency || productCurrency)
             const activeMetric = pending?.metricUsed ?? pending?.selectedMetric ?? comp.selected_price_metric
@@ -386,7 +425,7 @@ export default function ProductCard({
 
                     <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-1.5 w-full sm:w-auto">
                       <div className="flex items-center gap-1.5 order-2 sm:order-1">
-                        {historyPoints.length >= 2 && !isFetching && (
+                        {hasHistory && !isFetching && (
                           <button
                             onClick={() => setExpandedHistory(prev => ({ ...prev, [comp.id]: !prev[comp.id] }))}
                             className="w-8 h-8 rounded-md border border-gray-200 text-xs text-gray-500 hover:text-black hover:border-gray-400 transition-colors"
@@ -410,7 +449,7 @@ export default function ProductCard({
                           className="w-8 h-8 rounded-md border border-gray-200 text-gray-500 hover:text-black hover:border-gray-400 transition-colors text-sm"
                           title="Edit competitor"
                         >✏️</button>
-                        <a
+                        
                           href={comp.url}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -419,43 +458,57 @@ export default function ProductCard({
                         >↗</a>
                       </div>
 
+                      {/* Price display in header */}
                       {!isFetching && priceWithVat !== null ? (
                         <div className="text-left sm:text-right shrink-0 order-1 sm:order-2">
-                        {saleActive && (
-                          <div className="mb-0.5">
-                            <span className="inline-flex items-center rounded-md bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-amber-700">
-                              SALE
+                          {saleActive && (
+                            <div className="mb-0.5">
+                              <span className="inline-flex items-center rounded-md bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-amber-700">
+                                SALE
+                              </span>
+                            </div>
+                          )}
+                          <div className={`text-base font-extrabold tabular-nums ${
+                            isPendingPreview
+                              ? 'text-amber-600'  // pending-preview: amber instead of green/red
+                              : cheaper ? 'text-red-500' : 'text-green-600'
+                          }`}>
+                            {formatCandidatePrice(priceWithVat, compCurrency, activeMetric)}
+                            {isPendingPreview && (
+                              <span className="ml-1 text-[10px] font-normal text-amber-500">?</span>
+                            )}
+                          </div>
+                          {!isPendingPreview && (
+                            <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
+                              {cheaper ? 'CHEAPER' : 'HIGHER'}
+                            </div>
+                          )}
+                          {isPendingPreview && (
+                            <div className="text-[10px] text-amber-500 font-medium">Confirm below</div>
+                          )}
+                          <div className="mt-1">
+                            <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stockBadgeClass}`}>
+                              {stockLabel}
                             </span>
                           </div>
-                        )}
-                        <div className={`text-base font-extrabold tabular-nums ${cheaper ? 'text-red-500' : 'text-green-600'}`}>
-                          {formatCandidatePrice(priceWithVat, compCurrency, activeMetric)}
+                          {vatRate > 0 && (
+                            <div className="text-[10px] text-gray-400">{showVat ? `incl. ${vatRate}% VAT` : `excl. ${vatRate}% VAT`}</div>
+                          )}
                         </div>
-                        <div className={`text-xs font-semibold ${cheaper ? 'text-red-400' : 'text-green-500'}`}>
-                          {cheaper ? 'CHEAPER' : 'HIGHER'}
-                        </div>
-                        <div className="mt-1">
-                          <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stockBadgeClass}`}>
-                            {stockLabel}
-                          </span>
-                        </div>
-                        {vatRate > 0 && (
-                          <div className="text-[10px] text-gray-400">{showVat ? `incl. ${vatRate}% VAT` : `excl. ${vatRate}% VAT`}</div>
-                        )}
-                      </div>
-                        ) : !isFetching ? (
-                          <span className="text-xs text-gray-400 shrink-0 order-1 sm:order-2">No price yet</span>
-                        ) : null}
+                      ) : !isFetching ? (
+                        <span className="text-xs text-gray-400 shrink-0 order-1 sm:order-2">No price yet</span>
+                      ) : null}
                     </div>
                   </div>
 
-                  {showHistory && historyPoints.length >= 2 && (
+                  {showHistory && historyPoints.length >= 1 && (
                     <div className="px-4 pb-3 border-t border-gray-100/80">
                       <PriceHistoryChart history={historyPoints} currency={comp.last_price_currency || productCurrency} />
                     </div>
                   )}
                 </div>
 
+                {/* Pending price confirmation */}
                 {pending && !isFetching && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 sm:px-4 py-3 space-y-2">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
