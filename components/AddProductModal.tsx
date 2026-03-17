@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Product } from '@/types'
-import { SUPPORTED_CURRENCIES } from '@/lib/currency'
+import { SUPPORTED_CURRENCIES, convertCurrency, normalizeCurrencyCode } from '@/lib/currency'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 interface Store {
@@ -55,6 +55,7 @@ export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, 
     : ''
 )
 const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
+  const previousCurrencyRef = useRef(currencyCode)
   const [autoPriceEnabled, setAutoPriceEnabled] = useState(product?.auto_price_enabled ?? false)
   const [autoPriceUndercutType, setAutoPriceUndercutType] = useState<'percent' | 'fixed'>(product?.auto_price_undercut_type === 'fixed' ? 'fixed' : 'percent')
   const [autoPriceUndercutValue, setAutoPriceUndercutValue] = useState(
@@ -147,6 +148,46 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
       }
     }
   }, [selectedShopifyProduct, shopifyProducts])
+
+  useEffect(() => {
+    const previousCurrency = previousCurrencyRef.current
+    if (previousCurrency === currencyCode) return
+
+    previousCurrencyRef.current = currencyCode
+
+    if (!mapFloorPrice) return
+
+    const mapFloor = Number.parseFloat(mapFloorPrice)
+    if (!Number.isFinite(mapFloor) || mapFloor <= 0) return
+
+    const convertMapFloorPrice = async () => {
+      try {
+        const convertedValue = await convertCurrency(
+          mapFloor,
+          normalizeCurrencyCode(previousCurrency),
+          normalizeCurrencyCode(currencyCode)
+        )
+        const decimals = normalizeCurrencyCode(currencyCode) === 'JPY' ? 0 : 2
+        const roundedValue = Number.parseFloat(convertedValue.toFixed(decimals))
+        setMapFloorPrice(String(roundedValue))
+        console.log('[AddProductModal] Converted MAP floor price for currency change', {
+          from: previousCurrency,
+          to: currencyCode,
+          before: mapFloor,
+          after: roundedValue,
+        })
+      } catch (error) {
+        console.log('[AddProductModal] Failed to convert MAP floor price on currency change', {
+          from: previousCurrency,
+          to: currencyCode,
+          mapFloor,
+          error,
+        })
+      }
+    }
+
+    convertMapFloorPrice()
+  }, [currencyCode])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
