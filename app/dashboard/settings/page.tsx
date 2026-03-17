@@ -4,6 +4,12 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
+const STORE_LIMITS: Record<string, number> = {
+  free: 1,
+  pro: 3,
+  business: 10,
+}
+
 interface Store {
   id: string
   shop_domain: string | null
@@ -224,6 +230,9 @@ function SettingsContent() {
 
   const primaryStore = stores.find(s => s.is_primary)
   const connectedStores = stores.filter(s => s.shop_domain)
+  const currentPlan = (primaryStore?.plan ?? 'free').toLowerCase()
+  const storeLimit = STORE_LIMITS[currentPlan] ?? STORE_LIMITS.free
+  const hasReachedStoreLimit = connectedStores.length >= storeLimit
   const selectedCompetitor = mockCompetitors.find(c => c.id === selectedCompetitorId) ?? null
 
   const getMockCompetitorProductTitle = (competitor: MockCompetitor) => {
@@ -263,6 +272,12 @@ function SettingsContent() {
         {searchParams?.get('error') === 'shopify' && (
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 mb-6">
             Failed to connect store. Please try again.
+          </div>
+        )}
+
+        {searchParams?.get('error') === 'store_limit' && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-xl px-4 py-3 mb-6">
+            Store limit reached for your plan. You can link up to <span className="font-semibold">{searchParams?.get('limit') ?? String(storeLimit)}</span> store(s) on the <span className="font-semibold capitalize">{searchParams?.get('plan') ?? currentPlan}</span> plan.
           </div>
         )}
 
@@ -310,25 +325,36 @@ function SettingsContent() {
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-2">
             <h2 className="font-bold text-base">Shopify Stores</h2>
-            <Link
-              href="/dashboard/connect-shopify"
-              className="text-sm font-semibold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition-colors"
-            >
-              + Add Store
-            </Link>
+            {hasReachedStoreLimit ? (
+              <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg">
+                Limit reached
+              </span>
+            ) : (
+              <Link
+                href="/dashboard/connect-shopify"
+                className="text-sm font-semibold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition-colors"
+              >
+                + Add Store
+              </Link>
+            )}
           </div>
+          <p className="text-xs text-gray-500 mb-4">
+            Connected stores: <span className="font-semibold text-gray-700">{connectedStores.length}</span> / <span className="font-semibold text-gray-700">{storeLimit}</span> for your <span className="capitalize font-semibold text-gray-700">{currentPlan}</span> plan.
+          </p>
 
           {connectedStores.length === 0 ? (
             <div className="space-y-3">
               <p className="text-sm text-gray-500">No Shopify stores connected yet.</p>
-              <Link
-                href="/dashboard/connect-shopify"
-                className="inline-block bg-black text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                Connect Your First Store
-              </Link>
+              {!hasReachedStoreLimit && (
+                <Link
+                  href="/dashboard/connect-shopify"
+                  className="inline-block bg-black text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Connect Your First Store
+                </Link>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
