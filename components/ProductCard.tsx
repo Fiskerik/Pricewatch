@@ -100,6 +100,7 @@ interface Props {
   onAddCompetitor: () => void
   onEditCompetitor: (competitor: CompetitorUrl) => void
   onRefreshCompetitor: (competitorId: string) => void
+  onToggleCompetitorAlert: (competitorId: string, isActive: boolean) => void
   onCurrencyUpdated: (productId: string, currencyCode: string, converted?: ConvertedCurrencyResponse) => void
   competitorLimit: number
   showVat: boolean
@@ -223,7 +224,7 @@ function PriceHistoryChart({ history, currency }: { history: PriceHistory[]; cur
 }
 
 export default function ProductCard({
-  product, marketPosition = 'no_data', isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor,
+  product, marketPosition = 'no_data', isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor, onToggleCompetitorAlert,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
 }: Props) {
@@ -285,7 +286,7 @@ export default function ProductCard({
           <div className="mt-1 flex flex-wrap items-center gap-2">
             {ourPrice !== null && (
               <span className="inline-flex items-center rounded-lg bg-blue-50 border border-blue-200 px-2 py-0.5 text-sm font-extrabold text-blue-700">
-                Your price: {formatMoney(ourPrice, normalizeCurrencyCode(productCurrency))}
+                Your price: {formatMoney(ourPrice, normalizeCurrencyCode(product.currency_code, 'USD'))}
               </span>
             )}
             <span className="text-xs text-gray-500 leading-tight">
@@ -365,6 +366,7 @@ export default function ProductCard({
             const changed = comp.last_changed_at && new Date(comp.last_changed_at) > new Date(Date.now() - 86400000)
             const includesVat = competitorVatIncluded[comp.id] ?? comp.vat_included ?? true
             const saleActive = isSaleMetric(pending?.selectedMetric ?? comp.selected_price_metric)
+            const alertsEnabled = comp.is_active !== false
 
             // ── Price display logic ──────────────────────────────────────────
             // Priority: confirmed last_price → pending price (fetched but not yet confirmed)
@@ -454,6 +456,23 @@ export default function ProductCard({
                             {showHistory ? '📉' : '📈'}
                           </button>
                         )}
+                        <button
+                          onClick={() => onToggleCompetitorAlert(comp.id, !alertsEnabled)}
+                          className={`relative w-8 h-8 rounded-md border text-sm transition-colors inline-flex items-center justify-center ${
+                            alertsEnabled
+                              ? 'border-amber-200 text-amber-600 hover:text-amber-700 hover:border-amber-300 bg-amber-50'
+                              : 'border-gray-200 text-gray-400 bg-gray-100'
+                          }`}
+                          title={alertsEnabled ? 'Disable alerts for this competitor' : 'Enable alerts for this competitor'}
+                          aria-label={alertsEnabled ? 'Disable alerts' : 'Enable alerts'}
+                        >
+                          <span>🔔</span>
+                          {!alertsEnabled && (
+                            <span className="pointer-events-none absolute inset-0">
+                              <span className="absolute left-1 right-1 top-1/2 h-[1.5px] -translate-y-1/2 -rotate-45 bg-gray-500" />
+                            </span>
+                          )}
+                        </button>
                         <button
                           onClick={() => onRefreshCompetitor(comp.id)}
                           disabled={isFetching}

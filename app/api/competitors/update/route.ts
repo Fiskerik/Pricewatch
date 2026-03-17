@@ -18,7 +18,7 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-const { competitorId, url, label, updatedPrice, updatedCurrency, selectedMetric, priceDecimalShift, priceCurrencyOverride } = await req.json()
+  const { competitorId, url, label, updatedPrice, updatedCurrency, selectedMetric, priceDecimalShift, priceCurrencyOverride, isActive } = await req.json()
   if (!competitorId || !url) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   let normalizedUrl = ''
@@ -50,12 +50,15 @@ const { competitorId, url, label, updatedPrice, updatedCurrency, selectedMetric,
     updatePayload.last_price_currency = updatedCurrency.trim().toUpperCase()
   }
   if (typeof priceDecimalShift === 'number' && Number.isFinite(priceDecimalShift)) {
-  updatePayload.price_decimal_shift = Math.max(-6, Math.min(6, Math.trunc(priceDecimalShift)))
+    updatePayload.price_decimal_shift = Math.max(-6, Math.min(6, Math.trunc(priceDecimalShift)))
   }
   if (typeof priceCurrencyOverride === 'string' && priceCurrencyOverride.trim()) {
     updatePayload.price_currency_override = priceCurrencyOverride.trim().toUpperCase()
   } else if (priceCurrencyOverride === null) {
     updatePayload.price_currency_override = null
+  }
+  if (typeof isActive === 'boolean') {
+    updatePayload.is_active = isActive
   }
 
   const { data: competitor, error } = await admin

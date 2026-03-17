@@ -66,10 +66,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const [pendingPrices, setPendingPrices] = useState<Record<string, PendingPrice>>({})
   const [preferredMetrics, setPreferredMetrics] = useState<Record<string, string>>({})
   const [decimalShifts, setDecimalShifts] = useState<Record<string, number>>({})
-  const [testCompetitorId, setTestCompetitorId] = useState<string>('')
-  const [testEmailPriceInput, setTestEmailPriceInput] = useState<string>('')
-  const [testEmailLoading, setTestEmailLoading] = useState(false)
-  const [testEmailMessage, setTestEmailMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const applyDecimalShift = (value: number, shift: number) => {
     if (!Number.isFinite(value) || !Number.isFinite(shift) || shift === 0) return value
@@ -180,21 +176,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     )
   }, [products, searchQuery])
 
-  const testableCompetitors = useMemo(() => {
-    return products.flatMap(product =>
-      (product.competitor_urls ?? []).map(competitor => ({
-        id: competitor.id,
-        label: competitor.label,
-        url: competitor.url,
-        lastPrice: competitor.last_price,
-        currency: normalizeCurrencyCode(competitor.last_price_currency ?? product.currency_code ?? 'USD'),
-        productTitle: product.title,
-      }))
-    )
-  }, [products])
-
-  const selectedTestCompetitor = testableCompetitors.find(competitor => competitor.id === testCompetitorId) ?? null
-
   const productMarketPosition = useMemo(() => {
     const map: Record<string, MarketPosition | 'map_violation'> = {}
     
@@ -253,24 +234,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
     return { ...summary, leader }
   }, [products, productMarketPosition])
-
-  useEffect(() => {
-    if (testableCompetitors.length === 0) {
-      setTestCompetitorId('')
-      setTestEmailPriceInput('')
-      return
-    }
-
-    const active = testableCompetitors.find(competitor => competitor.id === testCompetitorId)
-    const next = active ?? testableCompetitors[0]
-    if (!active) {
-      setTestCompetitorId(next.id)
-    }
-
-    if (!testEmailPriceInput && typeof next.lastPrice === 'number' && Number.isFinite(next.lastPrice) && next.lastPrice > 0) {
-      setTestEmailPriceInput((next.lastPrice * 0.95).toFixed(2))
-    }
-  }, [testableCompetitors, testCompetitorId, testEmailPriceInput])
 
   const triggerBackgroundFetch = (competitorId: string) => {
     setFetchingIds(prev => ({ ...prev, [competitorId]: true }))
@@ -473,6 +436,38 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setDecimalShifts(prev => { const n = { ...prev }; delete n[competitorId]; return n })
   }
 
+  const handleToggleCompetitorAlert = async (competitorId: string, isActive: boolean) => {
+    const competitor = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === competitorId)
+    if (!competitor) return
+
+    setProducts(prev => prev.map(product => ({
+      ...product,
+      competitor_urls: (product.competitor_urls ?? []).map(c =>
+        c.id === competitorId ? { ...c, is_active: isActive } : c,
+      ),
+    })))
+
+    const response = await fetch('/api/competitors/update', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        competitorId,
+        url: competitor.url,
+        label: competitor.label,
+        isActive,
+      }),
+    }).catch(() => null)
+
+    if (!response?.ok) {
+      setProducts(prev => prev.map(product => ({
+        ...product,
+        competitor_urls: (product.competitor_urls ?? []).map(c =>
+          c.id === competitorId ? { ...c, is_active: !isActive } : c,
+        ),
+      })))
+    }
+  }
+
   const handleProductCurrencyUpdated = (productId: string, currencyCode: string, converted?: {
     product?: { id: string; currency_code: string; our_price: number | null }
     competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
@@ -509,36 +504,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     })
   }
 
-  const handleSendOnboardingTestEmail = async () => {
-    const parsedPrice = Number(testEmailPriceInput)
-    if (!testCompetitorId || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
-      setTestEmailMessage({ type: 'error', text: 'Select a competitor and enter a valid test price.' })
-      return
-    }
 
-    setTestEmailLoading(true)
-    setTestEmailMessage(null)
-
-    try {
-      const res = await fetch('/api/mock/send-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ competitorId: testCompetitorId, newPrice: parsedPrice }),
-      })
-
-      const data = await res.json()
-      if (!res.ok) {
-        setTestEmailMessage({ type: 'error', text: data?.error ?? 'Failed to send test email.' })
-        return
-      }
-
-      setTestEmailMessage({ type: 'success', text: 'Test email sent. Check your inbox and spam/junk folder.' })
-    } catch {
-      setTestEmailMessage({ type: 'error', text: 'Could not send test email. Try again.' })
-    } finally {
-      setTestEmailLoading(false)
-    }
-  }
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -625,58 +591,6 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             <div className="space-y-0">
               {alerts.slice(0, 5).map((alert: any) => <AlertBadge key={alert.id} alert={alert} />)}
             </div>
-          </div>
-        )}
-
-        {products.length > 0 && totalCompetitors > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 mb-4">
-            <h2 className="font-bold text-sm">Test your email flow</h2>
-            <p className="text-xs text-gray-500 mt-1 mb-3">
-              Great start — you can send a real sample alert now. If you don&apos;t see it, check spam/junk and add
-              <span className="font-semibold text-gray-700"> onboarding@resend.dev </span>
-              as a safe sender.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <select
-                value={testCompetitorId}
-                onChange={(event) => setTestCompetitorId(event.target.value)}
-                className="sm:col-span-2 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-              >
-                {testableCompetitors.map((competitor) => (
-                  <option key={competitor.id} value={competitor.id}>
-                    {competitor.productTitle} · {competitor.label ?? competitor.url}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={testEmailPriceInput}
-                onChange={(event) => setTestEmailPriceInput(event.target.value)}
-                placeholder="Test price"
-                inputMode="decimal"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-              />
-            </div>
-
-            <div className="mt-2 text-xs text-gray-500">
-              Current saved price: {selectedTestCompetitor?.lastPrice != null
-                ? formatMoney(selectedTestCompetitor.lastPrice, selectedTestCompetitor.currency)
-                : 'Not saved yet. Confirm one fetched price first.'}
-            </div>
-
-            <button
-              onClick={handleSendOnboardingTestEmail}
-              disabled={testEmailLoading || selectedTestCompetitor?.lastPrice == null}
-              className="mt-3 w-full sm:w-auto text-sm font-semibold text-white bg-black px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
-            >
-              {testEmailLoading ? 'Sending...' : 'Send test email'}
-            </button>
-
-            {testEmailMessage && (
-              <div className={`mt-3 text-sm rounded-lg px-3 py-2 ${testEmailMessage.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-                {testEmailMessage.text}
-              </div>
-            )}
           </div>
         )}
 
@@ -767,6 +681,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       onAddCompetitor={() => setAddCompetitorFor(product.id)}
                       onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                       onRefreshCompetitor={triggerBackgroundFetch}
+                      onToggleCompetitorAlert={handleToggleCompetitorAlert}
                       onCurrencyUpdated={handleProductCurrencyUpdated}
                       competitorLimit={limits.competitors}
                       showVat={showVat}
