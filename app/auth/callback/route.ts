@@ -1,6 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { isTestUserEmail } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
@@ -13,7 +14,10 @@ export async function GET(req: NextRequest) {
     // Ensure the user has a store row
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      await supabase.from('stores').upsert({ user_id: user.id }, { onConflict: 'user_id' })
+      const isTestUser = isTestUserEmail(user.email)
+      await supabase
+        .from('stores')
+        .upsert({ user_id: user.id, plan: isTestUser ? 'pro' : 'free' }, { onConflict: 'user_id' })
     }
   }
 
