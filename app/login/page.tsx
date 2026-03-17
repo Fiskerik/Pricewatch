@@ -71,13 +71,11 @@ export default function LoginPage() {
       setAuthError('Login is temporarily unavailable. Please contact support.')
       return
     }
-   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-      email,
-      password,
-    })
+
     setPasswordLoading(true)
     setAuthError(null)
-    const { error } = await supabase.auth.signInWithPassword({
+
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -88,9 +86,11 @@ export default function LoginPage() {
       setPasswordLoading(false)
       return
     }
-    if (data.user) {
+
+    if (data?.user) {
       await supabase.from('stores').upsert({ user_id: data.user.id }, { onConflict: 'user_id' })
     }
+
     window.location.href = '/dashboard'
   }
 
