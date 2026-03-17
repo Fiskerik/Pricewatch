@@ -54,6 +54,10 @@ function SettingsContent() {
   const [mockEmailPriceInput, setMockEmailPriceInput] = useState('')
   const [mockLoading, setMockLoading] = useState(false)
   const [billingLoading, setBillingLoading] = useState(false)
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [mockMessage, setMockMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
@@ -203,6 +207,37 @@ function SettingsContent() {
     }
   }
 
+  const handleChangePassword = async () => {
+    if (newPassword.length < 8) {
+      setPasswordMessage({ type: 'error', text: 'Password must be at least 8 characters long.' })
+      return
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordMessage({ type: 'error', text: 'Passwords do not match.' })
+      return
+    }
+
+    setPasswordChangeLoading(true)
+    setPasswordMessage(null)
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) {
+        setPasswordMessage({ type: 'error', text: error.message })
+        return
+      }
+
+      setPasswordMessage({ type: 'success', text: 'Password updated successfully.' })
+      setNewPassword('')
+      setConfirmNewPassword('')
+    } catch {
+      setPasswordMessage({ type: 'error', text: 'Could not update password. Try again.' })
+    } finally {
+      setPasswordChangeLoading(false)
+    }
+  }
+
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/')
@@ -234,6 +269,8 @@ function SettingsContent() {
   const storeLimit = STORE_LIMITS[currentPlan] ?? STORE_LIMITS.free
   const hasReachedStoreLimit = connectedStores.length >= storeLimit
   const selectedCompetitor = mockCompetitors.find(c => c.id === selectedCompetitorId) ?? null
+  const userProviders = Array.isArray(user?.app_metadata?.providers) ? user.app_metadata.providers : []
+  const canChangePassword = userProviders.includes('email')
 
   const getMockCompetitorProductTitle = (competitor: MockCompetitor) => {
     if (Array.isArray(competitor.products)) {
@@ -312,6 +349,52 @@ function SettingsContent() {
             </div>
           </div>
         </section>
+
+        {canChangePassword && (
+          <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
+            <h2 className="font-bold text-base mb-1">Security</h2>
+            <p className="text-xs text-gray-500 mb-4">Change your password for email login.</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">New password</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="Minimum 8 characters"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Confirm new password</label>
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(event) => setConfirmNewPassword(event.target.value)}
+                  placeholder="Re-enter new password"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <button
+                onClick={handleChangePassword}
+                disabled={passwordChangeLoading || !newPassword || !confirmNewPassword}
+                className="text-sm font-semibold text-white bg-black px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+              >
+                {passwordChangeLoading ? 'Updating…' : 'Update password'}
+              </button>
+            </div>
+
+            {passwordMessage && (
+              <div className={`mt-3 text-sm rounded-lg px-3 py-2 ${passwordMessage.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                {passwordMessage.text}
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <h2 className="font-bold text-base mb-4">Billing</h2>
