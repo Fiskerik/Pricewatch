@@ -58,7 +58,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
 
   const [viewMode, setViewMode] = useState<ViewMode>('products')
   const [searchQuery, setSearchQuery] = useState('')
-  const [expandedDomain, setExpandedDomain] = useState<string | null>(null)
+  const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set())
   const [productLayout, setProductLayout] = useState<ProductLayout>('list')
   const [draggingProductId, setDraggingProductId] = useState<string | null>(null)
 
@@ -737,7 +737,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               competitorGroups
                 .filter(g => !searchQuery || g.domain.includes(searchQuery.toLowerCase()))
                 .map(group => {
-                  const isOpen = expandedDomain === group.domain
+                  const isOpen = expandedDomains.has(group.domain)
                   const anyChanged = group.entries.some(e =>
                     e.comp.last_changed_at && new Date(e.comp.last_changed_at) > new Date(Date.now() - 86400000)
                   )
@@ -746,7 +746,12 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                   return (
                     <div key={group.domain} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                       <button
-                        onClick={() => setExpandedDomain(isOpen ? null : group.domain)}
+                        onClick={() => setExpandedDomains(prev => {
+                          const next = new Set(prev)
+                          if (next.has(group.domain)) next.delete(group.domain)
+                          else next.add(group.domain)
+                          return next
+                        })}
                         className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors"
                       >
                         <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
