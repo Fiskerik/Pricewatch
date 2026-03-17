@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Link from 'next/link'
+import Image from 'next/image'
 
 export default function SignupPage() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -17,6 +18,16 @@ export default function SignupPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
+  const getSignupErrorMessage = (message: string) => {
+    const normalized = message.toLowerCase()
+
+    if (normalized.includes('rate limit') || normalized.includes('too many requests')) {
+      return 'Too many signup attempts from this device. Please wait a minute and try again.'
+    }
+
+    return message
+  }
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!supabase) {
@@ -27,16 +38,18 @@ export default function SignupPage() {
 
     setLoading(true)
     setAuthError(null)
+    console.log('Magic link signup attempt started', { email })
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     })
     if (error) {
       console.error('Magic link signup failed:', error.message)
-      setAuthError(error.message)
+      setAuthError(getSignupErrorMessage(error.message))
       setLoading(false)
       return
     }
+    console.log('Magic link signup request accepted', { email })
     setSent(true)
     setLoading(false)
   }
@@ -63,6 +76,7 @@ export default function SignupPage() {
 
     setPasswordLoading(true)
     setAuthError(null)
+    console.log('Password signup attempt started', { email })
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -73,11 +87,12 @@ export default function SignupPage() {
 
     if (error) {
       console.error('Password signup failed:', error.message)
-      setAuthError(error.message)
+      setAuthError(getSignupErrorMessage(error.message))
       setPasswordLoading(false)
       return
     }
 
+    console.log('Password signup request accepted', { email })
     setSent(true)
     setPasswordLoading(false)
   }
@@ -91,6 +106,7 @@ export default function SignupPage() {
 
     setGoogleLoading(true)
     setAuthError(null)
+    console.log('Google signup attempt started')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -99,7 +115,7 @@ export default function SignupPage() {
     })
     if (error) {
       console.error('Google signup failed:', error.message)
-      setAuthError(error.message)
+      setAuthError(getSignupErrorMessage(error.message))
       setGoogleLoading(false)
       return
     }
@@ -111,7 +127,7 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-8">
-            <div className="w-7 h-7 bg-black rounded-md flex items-center justify-center text-white font-bold">⚡</div>
+            <Image src="/logo.png" alt="Pricingspy logo" width={28} height={28} className="rounded-md" />
             <span className="font-bold">Pricingspy</span>
           </Link>
           <h1 className="text-2xl font-extrabold tracking-tight">Start for free</h1>
