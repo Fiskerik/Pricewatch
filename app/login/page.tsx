@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Link from 'next/link'
 import Image from 'next/image'
+import { TEST_USER_EMAIL, TEST_USER_PASSWORD } from '@/lib/auth'
 
 export default function LoginPage() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -75,11 +76,30 @@ export default function LoginPage() {
     setPasswordLoading(true)
     setAuthError(null)
 
+    const normalizedEmail = email.trim().toLowerCase()
+    if (normalizedEmail === TEST_USER_EMAIL && password === TEST_USER_PASSWORD) {
+      console.log('Ensuring test user exists before password login', { email: normalizedEmail })
+      const ensureRes = await fetch('/api/auth/ensure-test-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      })
+
+      if (!ensureRes.ok) {
+        const ensurePayload = await ensureRes.json().catch(() => null)
+        const ensureMessage = ensurePayload?.error ?? 'Could not prepare test user account.'
+        console.error('Ensuring test user failed:', ensureMessage)
+        setAuthError(ensureMessage)
+        setPasswordLoading(false)
+        return
+      }
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: normalizedEmail,
       password,
     })
-    
+
     if (error) {
       console.error('Password login failed:', error.message)
       setAuthError(error.message)
@@ -88,7 +108,8 @@ export default function LoginPage() {
     }
 
     if (data?.user) {
-      await supabase.from('stores').upsert({ user_id: data.user.id }, { onConflict: 'user_id' })
+      const plan = normalizedEmail === TEST_USER_EMAIL ? 'pro' : 'free'
+      await supabase.from('stores').upsert({ user_id: data.user.id, plan }, { onConflict: 'user_id' })
     }
 
     window.location.href = '/dashboard'

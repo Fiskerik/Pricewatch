@@ -2,6 +2,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import DashboardClient from './DashboardClient'
+import { isTestUserEmail } from '@/lib/auth'
 
 export default async function DashboardPage() {
   const supabase = createServerComponentClient({ cookies })
@@ -18,10 +19,23 @@ export default async function DashboardPage() {
   if (!store) {
     const { data: newStore } = await supabase
       .from('stores')
-      .insert({ user_id: user.id })
+      .insert({ user_id: user.id, plan: isTestUserEmail(user.email) ? 'pro' : 'free' })
       .select()
       .single()
     store = newStore
+  }
+
+  if (store && isTestUserEmail(user.email) && store.plan !== 'pro') {
+    const { data: updatedStore } = await supabase
+      .from('stores')
+      .update({ plan: 'pro' })
+      .eq('id', store.id)
+      .select()
+      .single()
+
+    if (updatedStore) {
+      store = updatedStore
+    }
   }
 
   // Fetch products with their competitor URLs and latest price history

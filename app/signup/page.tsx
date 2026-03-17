@@ -10,11 +10,8 @@ export default function SignupPage() {
   const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
   const supabase = isSupabaseConfigured ? createClientComponentClient() : null
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [passwordLoading, setPasswordLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -52,49 +49,6 @@ export default function SignupPage() {
     console.log('Magic link signup request accepted', { email })
     setSent(true)
     setLoading(false)
-  }
-
-  const handlePasswordSignup = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!supabase) {
-      console.error('Password signup blocked: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
-      setAuthError('Signup is temporarily unavailable. Please contact support.')
-      return
-    }
-
-    if (password.length < 8) {
-      console.error('Password signup blocked: password shorter than 8 characters')
-      setAuthError('Password must be at least 8 characters long.')
-      return
-    }
-
-    if (password !== confirmPassword) {
-      console.error('Password signup blocked: password confirmation mismatch')
-      setAuthError('Passwords do not match.')
-      return
-    }
-
-    setPasswordLoading(true)
-    setAuthError(null)
-    console.log('Password signup attempt started', { email })
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-
-    if (error) {
-      console.error('Password signup failed:', error.message)
-      setAuthError(getSignupErrorMessage(error.message))
-      setPasswordLoading(false)
-      return
-    }
-
-    console.log('Password signup request accepted', { email })
-    setSent(true)
-    setPasswordLoading(false)
   }
 
   const handleGoogleLogin = async () => {
@@ -159,40 +113,12 @@ export default function SignupPage() {
                   className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
                 />
               </div>
-              <div>
-                <label className="text-sm font-semibold block mb-1.5">Password (testing)</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Minimum 8 characters"
-                  className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-semibold block mb-1.5">Confirm password</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter your password"
-                  className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
-                />
-              </div>
               <button
                 type="submit"
                 disabled={loading || !isSupabaseConfigured}
                 className="w-full bg-black text-white font-bold py-2.5 rounded-lg text-sm hover:bg-gray-800 transition-colors disabled:opacity-50"
               >
                 {loading ? 'Sending link...' : 'Create free account'}
-              </button>
-              <button
-                type="button"
-                onClick={handlePasswordSignup}
-                disabled={passwordLoading || !isSupabaseConfigured || !email || !password || !confirmPassword}
-                className="w-full bg-gray-900 text-white font-bold py-2.5 rounded-lg text-sm hover:bg-black transition-colors disabled:opacity-50"
-              >
-                {passwordLoading ? 'Creating account...' : 'Create account with password (testing)'}
               </button>
               <button
                 type="button"
