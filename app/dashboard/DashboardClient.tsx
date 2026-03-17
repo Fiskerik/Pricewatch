@@ -872,6 +872,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       {showAddProduct && (
         <AddProductModal
           storeId={store?.id ?? ''}
+          plan={plan}
           onClose={() => setShowAddProduct(false)}
           onAdded={handleProductAdded}
         />
@@ -879,6 +880,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       {editingProduct && (
         <AddProductModal
           mode="edit"
+          plan={plan}
           product={editingProduct}
           onClose={() => setEditingProduct(null)}
           onAdded={() => {}}

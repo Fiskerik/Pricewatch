@@ -18,12 +18,14 @@ export async function POST(req: NextRequest) {
   // Verify this store belongs to the user
   const { data: store } = await supabase
     .from('stores')
-    .select('id')
+    .select('id, plan')
     .eq('id', storeId)
     .eq('user_id', user.id)
     .single()
 
   if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 })
+
+  const canUseAutoPrice = store.plan === 'pro' || store.plan === 'business'
 
   const payload = {
     store_id: storeId,
@@ -37,9 +39,9 @@ export async function POST(req: NextRequest) {
     image_url: imageUrl ?? null,
     map_floor_price: typeof mapFloorPrice === 'number' && mapFloorPrice > 0 ? mapFloorPrice : null,
     map_enabled: typeof mapEnabled === 'boolean' ? mapEnabled : false,
-    auto_price_enabled: typeof autoPriceEnabled === 'boolean' ? autoPriceEnabled : false,
-    auto_price_undercut_type: autoPriceEnabled && (autoPriceUndercutType === 'percent' || autoPriceUndercutType === 'fixed') ? autoPriceUndercutType : null,
-    auto_price_undercut_value: autoPriceEnabled && typeof autoPriceUndercutValue === 'number' && Number.isFinite(autoPriceUndercutValue)
+    auto_price_enabled: canUseAutoPrice && typeof autoPriceEnabled === 'boolean' ? autoPriceEnabled : false,
+    auto_price_undercut_type: canUseAutoPrice && autoPriceEnabled && (autoPriceUndercutType === 'percent' || autoPriceUndercutType === 'fixed') ? autoPriceUndercutType : null,
+    auto_price_undercut_value: canUseAutoPrice && autoPriceEnabled && typeof autoPriceUndercutValue === 'number' && Number.isFinite(autoPriceUndercutValue)
       ? autoPriceUndercutValue
       : null,
   }

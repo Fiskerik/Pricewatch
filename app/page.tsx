@@ -73,12 +73,12 @@ export default function LandingPage() {
             },
             {
               name: 'Pro', price: '$15', period: 'per month',
-              features: ['25 products', '10 competitors each', 'Daily price checks', 'Email alerts', 'Price history charts', 'Auto price adjust'],
+              features: ['25 products', '5 competitors each', 'Daily price checks', 'Email alerts', 'Price history charts', 'Auto price adjust'],
               cta: 'Start Pro free trial', href: '/signup?plan=pro', highlight: true,
             },
             {
               name: 'Business', price: '$39', period: 'per month',
-              features: ['Unlimited products', 'Unlimited competitors', 'Daily price checks', 'Email + Slack alerts', 'Price history charts', 'Auto price adjust'],
+              features: ['Unlimited products', 'Unlimited competitors', 'Hourly price checks', 'Email + Slack alerts', 'Price history charts', 'Auto price adjust'],
               cta: 'Start Business trial', href: '/signup?plan=business', highlight: false,
             },
           ].map(plan => (

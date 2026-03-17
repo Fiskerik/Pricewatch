@@ -21,6 +21,7 @@ interface ShopifyProduct {
 
 interface Props {
   storeId?: string
+  plan?: 'free' | 'pro' | 'business'
   onClose: () => void
   onAdded: (product: Product) => void
   onUpdated?: (product: Product) => void
@@ -28,7 +29,7 @@ interface Props {
   product?: Product | null
 }
 
-export default function AddProductModal({ storeId, onClose, onAdded, onUpdated, mode = 'add', product }: Props) {
+export default function AddProductModal({ storeId, plan = 'free', onClose, onAdded, onUpdated, mode = 'add', product }: Props) {
   const supabase = createClientComponentClient()
   const isEditMode = mode === 'edit' && !!product
 
@@ -63,6 +64,8 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
       ? String(product.auto_price_undercut_value)
       : ''
   )
+
+  const canUseAutoPrice = plan === 'pro' || plan === 'business'
 
   // Load user's stores
   useEffect(() => {
@@ -214,9 +217,9 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
             vatIncluded,
             mapFloorPrice: mapEnabled && mapFloorPrice ? parseFloat(mapFloorPrice) : null,
             mapEnabled,
-            autoPriceEnabled,
-            autoPriceUndercutType,
-            autoPriceUndercutValue: autoPriceEnabled && autoPriceUndercutValue ? parseFloat(autoPriceUndercutValue) : null,
+            autoPriceEnabled: canUseAutoPrice ? autoPriceEnabled : false,
+            autoPriceUndercutType: canUseAutoPrice ? autoPriceUndercutType : null,
+            autoPriceUndercutValue: canUseAutoPrice && autoPriceEnabled && autoPriceUndercutValue ? parseFloat(autoPriceUndercutValue) : null,
             shopifyVariantId: shopifyProduct?.shopify_variant_id ?? null,
           }
         : { 
@@ -230,9 +233,9 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
             vatIncluded,
             mapFloorPrice: mapEnabled && mapFloorPrice ? parseFloat(mapFloorPrice) : null,
             mapEnabled,
-            autoPriceEnabled,
-            autoPriceUndercutType,
-            autoPriceUndercutValue: autoPriceEnabled && autoPriceUndercutValue ? parseFloat(autoPriceUndercutValue) : null,
+            autoPriceEnabled: canUseAutoPrice ? autoPriceEnabled : false,
+            autoPriceUndercutType: canUseAutoPrice ? autoPriceUndercutType : null,
+            autoPriceUndercutValue: canUseAutoPrice && autoPriceEnabled && autoPriceUndercutValue ? parseFloat(autoPriceUndercutValue) : null,
           }
 
       const res = await fetch(endpoint, {
@@ -480,10 +483,16 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
                 checked={autoPriceEnabled}
                 onChange={e => setAutoPriceEnabled(e.target.checked)}
                 className="rounded border-gray-300"
+                disabled={!canUseAutoPrice}
               />
               Enable Auto-adjust pricing
             </label>
-            {autoPriceEnabled && (
+            {!canUseAutoPrice && (
+              <p className="text-[11px] text-gray-500">
+                Upgrade to Pro or Business to enable automatic repricing for this product.
+              </p>
+            )}
+            {canUseAutoPrice && autoPriceEnabled && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
