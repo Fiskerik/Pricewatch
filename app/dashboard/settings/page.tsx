@@ -406,18 +406,6 @@ function SettingsContent() {
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
-          <h2 className="font-bold text-base mb-2">Shopify GDPR webhook endpoints</h2>
-          <p className="text-xs text-gray-500 mb-3">
-            Add these URLs in your Shopify app dashboard under mandatory GDPR webhooks.
-          </p>
-          <div className="text-xs text-gray-700 space-y-1">
-            <div><span className="font-semibold">customers/redact:</span> {(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')}/api/shopify/webhooks/customers-redact</div>
-            <div><span className="font-semibold">shop/redact:</span> {(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')}/api/shopify/webhooks/shop-redact</div>
-            <div><span className="font-semibold">customers/data_request:</span> {(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')}/api/shopify/webhooks/customers-data-request</div>
-          </div>
-        </section>
-
-        <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <h2 className="font-bold text-base mb-1">Temporary Mock Testing</h2>
           <p className="text-xs text-gray-500 mb-4">
             Queue a one-time mock price for the selected competitor. The next cron run will use this mocked price and trigger your normal alert flow if it differs from current saved price.
