@@ -10,8 +10,10 @@ export default function LoginPage() {
   const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
   const supabase = isSupabaseConfigured ? createClientComponentClient() : null
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [passwordLoading, setPasswordLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -63,6 +65,30 @@ export default function LoginPage() {
     setGoogleLoading(false)
   }
 
+  const handlePasswordLogin = async () => {
+    if (!supabase) {
+      console.error('Password login blocked: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+      setAuthError('Login is temporarily unavailable. Please contact support.')
+      return
+    }
+
+    setPasswordLoading(true)
+    setAuthError(null)
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      console.error('Password login failed:', error.message)
+      setAuthError(error.message)
+      setPasswordLoading(false)
+      return
+    }
+
+    window.location.href = '/dashboard'
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
@@ -72,7 +98,7 @@ export default function LoginPage() {
             <span className="font-bold">Pricingspy</span>
           </Link>
           <h1 className="text-2xl font-extrabold tracking-tight">Welcome back</h1>
-          <p className="text-gray-500 text-sm mt-1">Sign in with a magic link — no password needed</p>
+          <p className="text-gray-500 text-sm mt-1">Sign in with magic link, password, or Google</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
@@ -100,6 +126,24 @@ export default function LoginPage() {
                   className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
                 />
               </div>
+              <div>
+                <label className="text-sm font-semibold block mb-1.5">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-black transition-colors"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handlePasswordLogin}
+                disabled={passwordLoading || !isSupabaseConfigured || !email || !password}
+                className="w-full bg-gray-900 text-white font-bold py-2.5 rounded-lg text-sm hover:bg-black transition-colors disabled:opacity-50"
+              >
+                {passwordLoading ? 'Signing in...' : 'Sign in with password'}
+              </button>
               <button
                 type="submit"
                 disabled={loading || !isSupabaseConfigured}
