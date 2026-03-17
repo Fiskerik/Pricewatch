@@ -9,7 +9,7 @@ interface DiscoveryCandidate {
   label: string
   price: number | null
   currency: string | null
-  inStock: boolean
+  stockStatus: 'in_stock' | 'out_of_stock' | 'unknown'
   confidence: number
   domain: string
 }
@@ -249,12 +249,12 @@ export async function POST(req: NextRequest) {
     try {
       const scrapeResult = await scrapePrice(candidate.url, targetCurrency)
       
-      const inStock = scrapeResult.stockStatus === 'in_stock' || scrapeResult.stockStatus === 'unknown'
+      const isOutOfStock = scrapeResult.stockStatus === 'out_of_stock'
       
       // Calculate confidence score
       let confidence = 0.5
       if (scrapeResult.price !== null) confidence += 0.3
-      if (inStock) confidence += 0.2
+      if (!isOutOfStock) confidence += 0.2
       if (scrapeResult.stockStatus !== 'unknown') confidence += 0.1
       
       enrichedCandidates.push({
@@ -262,7 +262,7 @@ export async function POST(req: NextRequest) {
         label: candidate.label,
         price: scrapeResult.price,
         currency: scrapeResult.scrapedCurrency,
-        inStock,
+        stockStatus: scrapeResult.stockStatus,
         confidence,
         domain: extractDomainLabel(candidate.url),
       })
@@ -274,7 +274,7 @@ export async function POST(req: NextRequest) {
         label: candidate.label,
         price: null,
         currency: null,
-        inStock: true,
+        stockStatus: 'unknown',
         confidence: 0.2,
         domain: extractDomainLabel(candidate.url),
       })
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
  
   // Filter and rank
   const filtered = enrichedCandidates
-    .filter(c => c.inStock)
+    .filter(c => c.stockStatus !== 'out_of_stock')
     .sort((a, b) => {
       if (a.price !== null && b.price === null) return -1
       if (a.price === null && b.price !== null) return 1

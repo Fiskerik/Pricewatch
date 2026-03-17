@@ -7,7 +7,7 @@ interface DiscoveredCompetitor {
   label: string
   price: number | null
   currency: string | null
-  inStock: boolean
+  stockStatus: 'in_stock' | 'out_of_stock' | 'unknown'
   confidence: number
   domain: string
 }
@@ -274,13 +274,17 @@ export default function CompetitorSelectionModal({
                           
                           {/* Stock status */}
                           <div className="mt-1">
-                            {candidate.inStock ? (
+                            {candidate.stockStatus === 'in_stock' ? (
                               <span className="inline-flex items-center rounded-md bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
                                 In stock
                               </span>
-                            ) : (
+                            ) : candidate.stockStatus === 'out_of_stock' ? (
                               <span className="inline-flex items-center rounded-md bg-red-100 border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
                                 Out of stock
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-md bg-gray-100 border border-gray-200 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
+                                N/A
                               </span>
                             )}
                           </div>
