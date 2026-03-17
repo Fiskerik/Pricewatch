@@ -1,4 +1,4 @@
-# PriceWatch
+# Pricingspy
 
 Competitor price tracker for Shopify sellers. Paste a URL. Get an email when the price changes.
 
@@ -6,8 +6,8 @@ Competitor price tracker for Shopify sellers. Paste a URL. Get an email when the
 
 ### 1. Clone and install
 ```bash
-git clone https://github.com/YOUR_USERNAME/pricewatch
-cd pricewatch
+git clone https://github.com/YOUR_USERNAME/pricingspy
+cd pricingspy
 npm install
 ```
 

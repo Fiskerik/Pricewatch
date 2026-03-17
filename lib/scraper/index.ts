@@ -277,7 +277,7 @@ export async function scrapePrice(
         signal: timeoutSignal(Math.min(TIER1_TIMEOUT_MS, remainingMs(startedAt))),
         headers: {
           Accept: 'application/json, text/plain;q=0.9, */*;q=0.8',
-          'User-Agent': 'PricewatchBot/1.0 (+https://pricewatch.app)',
+          'User-Agent': 'PricingspyBot/1.0 (+https://pricingspy.app)',
         },
       })
 

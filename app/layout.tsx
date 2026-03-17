@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'PriceWatch — Competitor Price Tracking for Shopify',
+  title: 'Pricingspy — Competitor Price Tracking for Shopify',
   description: 'Paste a competitor URL. We watch it. You get an alert when prices change. Starting free.',
   icons: {
     icon: '/logo.png',

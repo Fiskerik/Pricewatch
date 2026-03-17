@@ -99,7 +99,7 @@ export async function runCompetitorPreflight(rawUrl: string): Promise<Competitor
     signal: AbortSignal.timeout(12_000),
     headers: {
       Accept: 'text/html,application/xhtml+xml',
-      'User-Agent': 'Mozilla/5.0 (compatible; PricewatchBot/1.0; +https://pricewatch.local)',
+      'User-Agent': 'Mozilla/5.0 (compatible; PricingspyBot/1.0; +https://pricingspy.local)',
     },
   })
 

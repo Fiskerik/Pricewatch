@@ -74,19 +74,19 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   useEffect(() => {
-    const storedCountry = window.localStorage.getItem('pricewatch:vatCountry')
+    const storedCountry = window.localStorage.getItem('pricingspy:vatCountry')
     const code = storedCountry ?? detectCountryCode()
     const country = VAT_COUNTRIES.find(c => c.code === code) ?? VAT_COUNTRIES.find(c => c.code === 'SE')!
     setVatCountryCode(country.code)
     setVatRate(country.rate)
 
-    const storedVat = window.localStorage.getItem('pricewatch:showVat')
+    const storedVat = window.localStorage.getItem('pricingspy:showVat')
     if (storedVat === 'false') setShowVat(false)
 
-    const storedLayout = window.localStorage.getItem('pricewatch:productLayout')
+    const storedLayout = window.localStorage.getItem('pricingspy:productLayout')
     if (storedLayout === 'grid' || storedLayout === 'list') setProductLayout(storedLayout)
 
-    const storedOrderRaw = window.localStorage.getItem('pricewatch:productOrder')
+    const storedOrderRaw = window.localStorage.getItem('pricingspy:productOrder')
     if (storedOrderRaw) {
       try {
         const storedOrder: string[] = JSON.parse(storedOrderRaw)
@@ -104,7 +104,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       } catch {}
     }
 
-    const storedMetricsRaw = window.localStorage.getItem('pricewatch:preferredMetrics')
+    const storedMetricsRaw = window.localStorage.getItem('pricingspy:preferredMetrics')
     if (storedMetricsRaw) {
       try {
         const parsed = JSON.parse(storedMetricsRaw) as Record<string, string>
@@ -112,7 +112,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
       } catch {}
     }
 
-    const storedDecimalShiftsRaw = window.localStorage.getItem('pricewatch:decimalShifts')
+    const storedDecimalShiftsRaw = window.localStorage.getItem('pricingspy:decimalShifts')
     if (storedDecimalShiftsRaw) {
       try {
         const parsed = JSON.parse(storedDecimalShiftsRaw) as Record<string, number>
@@ -122,24 +122,24 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }, [])
 
   useEffect(() => {
-    window.localStorage.setItem('pricewatch:productOrder', JSON.stringify(products.map(p => p.id)))
+    window.localStorage.setItem('pricingspy:productOrder', JSON.stringify(products.map(p => p.id)))
   }, [products])
 
   useEffect(() => {
-    window.localStorage.setItem('pricewatch:preferredMetrics', JSON.stringify(preferredMetrics))
+    window.localStorage.setItem('pricingspy:preferredMetrics', JSON.stringify(preferredMetrics))
   }, [preferredMetrics])
 
   useEffect(() => {
-    window.localStorage.setItem('pricewatch:decimalShifts', JSON.stringify(decimalShifts))
+    window.localStorage.setItem('pricingspy:decimalShifts', JSON.stringify(decimalShifts))
   }, [decimalShifts])
 
   const handleVatCountryChange = (code: string, rate: number) => {
     setVatCountryCode(code)
     setVatRate(rate)
-    window.localStorage.setItem('pricewatch:vatCountry', code)
+    window.localStorage.setItem('pricingspy:vatCountry', code)
     const next = rate > 0
     setShowVat(next)
-    window.localStorage.setItem('pricewatch:showVat', String(next))
+    window.localStorage.setItem('pricingspy:showVat', String(next))
   }
 
   const plan = store?.plan ?? 'free'
@@ -523,7 +523,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             {vatRate > 0 && (
               <button
                 type="button"
-                onClick={() => { const n = !showVat; setShowVat(n); window.localStorage.setItem('pricewatch:showVat', String(n)) }}
+                onClick={() => { const n = !showVat; setShowVat(n); window.localStorage.setItem('pricingspy:showVat', String(n)) }}
                 className={`flex items-center justify-center gap-2 border rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${showVat ? 'bg-black text-white border-black' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
               >
                 VAT {showVat ? 'on' : 'off'}
@@ -621,7 +621,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               <button
                 onClick={() => {
                   setProductLayout('list')
-                  window.localStorage.setItem('pricewatch:productLayout', 'list')
+                  window.localStorage.setItem('pricingspy:productLayout', 'list')
                 }}
                 className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-colors ${productLayout === 'list' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
               >
@@ -630,7 +630,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
               <button
                 onClick={() => {
                   setProductLayout('grid')
-                  window.localStorage.setItem('pricewatch:productLayout', 'grid')
+                  window.localStorage.setItem('pricingspy:productLayout', 'grid')
                 }}
                 className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-colors ${productLayout === 'grid' ? 'bg-black text-white' : 'text-gray-500 hover:text-gray-900'}`}
               >

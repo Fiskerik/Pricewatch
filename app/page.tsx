@@ -8,8 +8,8 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-3 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 border-b border-gray-100 max-w-6xl mx-auto">
         <div className="flex items-center gap-2 shrink-0">
-          <Image src="/logo.png" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
-          <span className="font-bold text-base">PriceWatch</span>
+          <Image src="/logo.png" alt="Pricingspy logo" width={28} height={28} className="rounded-md" />
+          <span className="font-bold text-base">Pricingspy</span>
         </div>
         <div className="flex items-center justify-end gap-2 sm:gap-4 w-full sm:w-auto">
           <a href="#pricing" className="text-sm text-gray-500 hover:text-gray-900 transition-colors px-2 py-1">Pricing</a>
@@ -104,7 +104,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-gray-100 py-8 px-6 text-center text-sm text-gray-400">
         <div className="flex items-center justify-center gap-3 flex-wrap">
-          <span>© {new Date().getFullYear()} PriceWatch · Built for Shopify sellers</span>
+          <span>© {new Date().getFullYear()} Pricingspy · Built for Shopify sellers</span>
           <span aria-hidden="true">·</span>
           <Link href="/privacy" className="hover:text-gray-700 transition-colors">Privacy policy</Link>
           <span aria-hidden="true">·</span>

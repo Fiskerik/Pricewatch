@@ -15,7 +15,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-lg font-bold text-gray-900 mb-2">1. Acceptance of Terms</h2>
             <p>
-              By accessing or using PriceWatch, you agree to these Terms and Conditions. If you do not agree,
+              By accessing or using Pricingspy, you agree to these Terms and Conditions. If you do not agree,
               you should not use the service.
             </p>
           </section>
@@ -39,7 +39,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-lg font-bold text-gray-900 mb-2">4. Availability</h2>
             <p>
-              We aim to keep PriceWatch available and accurate, but we do not guarantee uninterrupted service or
+              We aim to keep Pricingspy available and accurate, but we do not guarantee uninterrupted service or
               error-free data from third-party websites.
             </p>
           </section>
@@ -47,7 +47,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-lg font-bold text-gray-900 mb-2">5. Limitation of Liability</h2>
             <p>
-              To the maximum extent permitted by law, PriceWatch is not liable for indirect, incidental, or
+              To the maximum extent permitted by law, Pricingspy is not liable for indirect, incidental, or
               consequential damages resulting from your use of the service.
             </p>
           </section>
@@ -64,8 +64,8 @@ export default function TermsPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-2">7. Contact</h2>
             <p>
               For questions about these terms, contact{' '}
-              <a className="text-black underline" href="mailto:support@pricewatch.app">
-                support@pricewatch.app
+              <a className="text-black underline" href="mailto:support@pricingspy.app">
+                support@pricingspy.app
               </a>
               .
             </p>

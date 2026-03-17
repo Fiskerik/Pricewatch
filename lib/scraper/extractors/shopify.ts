@@ -25,7 +25,7 @@ export async function scrapeShopifyProductJson(url: string, options?: ScrapePric
       signal: AbortSignal.timeout(20_000),
       headers: {
         Accept: 'application/json,text/plain;q=0.9,*/*;q=0.8',
-        'User-Agent': 'PricewatchBot/1.0 (+https://pricewatch.app)',
+        'User-Agent': 'PricingspyBot/1.0 (+https://pricingspy.app)',
       },
     })
     if (!res.ok) return { price: null, scrapedCurrency: null, candidates: [], matchedPreferredMetric: false, metricUsed: null }

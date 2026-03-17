@@ -68,7 +68,7 @@ export default function SignupPage() {
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-8">
             <div className="w-7 h-7 bg-black rounded-md flex items-center justify-center text-white font-bold">⚡</div>
-            <span className="font-bold">PriceWatch</span>
+            <span className="font-bold">Pricingspy</span>
           </Link>
           <h1 className="text-2xl font-extrabold tracking-tight">Start for free</h1>
           <p className="text-gray-500 text-sm mt-1">No credit card required. Up and running in 2 minutes.</p>
