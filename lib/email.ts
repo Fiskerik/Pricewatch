@@ -80,7 +80,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
 <body style="margin:0;padding:32px 12px;background:#f4f4f5;font-family:Inter,system-ui,sans-serif;color:#18181b">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
   <div style="background:${accent};padding:24px 28px">
-    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">PriceWatch Alert</div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Pricingspy Alert</div>
     <div style="font-size:24px;line-height:1.25;font-weight:800;color:#fff;margin:0">${dropped ? 'Price dropped' : 'Price updated'}</div>
     <div style="font-size:14px;color:rgba(255,255,255,0.86);margin-top:6px">${name} changed price for <strong>${productTitle}</strong>.</div>
   </div>
@@ -110,8 +110,8 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
     </a>
   </div>
   <div style="padding:16px 28px 20px;border-top:1px solid #f0f0f0;font-size:11px;color:#71717a;text-align:center;line-height:1.6">
-    Not seeing alerts? Check your spam/junk folder and add <strong>onboarding@resend.dev</strong> as a safe sender.<br/>
-    PriceWatch &nbsp;&middot;&nbsp;
+    Not seeing alerts? Check your spam/junk folder and add <strong>eaconsulting.supp@gmail.com</strong> as a safe sender.<br/>
+    Pricingspy &nbsp;&middot;&nbsp;
     <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color:#a1a1aa;text-decoration:underline">Dashboard</a>
     &nbsp;&middot;&nbsp;
     <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/settings" style="color:#a1a1aa;text-decoration:underline">Manage alerts</a>
@@ -120,7 +120,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
 
   if (!apiKey) {
     return {
@@ -167,7 +167,7 @@ export async function sendStockAlert(params: StockAlertParams): Promise<EmailSen
 <body style="margin:0;padding:32px 12px;background:#f4f4f5;font-family:Inter,system-ui,sans-serif;color:#18181b">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
   <div style="background:${accent};padding:24px 28px">
-    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">PriceWatch Stock Alert</div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Pricingspy Stock Alert</div>
     <div style="font-size:24px;line-height:1.25;font-weight:800;color:#fff;margin:0">${isOos ? 'Competitor out of stock' : 'Competitor restocked'}</div>
     <div style="font-size:14px;color:rgba(255,255,255,0.86);margin-top:6px">${name} stock state changed for <strong>${productTitle}</strong>.</div>
   </div>
@@ -184,7 +184,7 @@ export async function sendStockAlert(params: StockAlertParams): Promise<EmailSen
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
 
   if (!apiKey) {
     return {
@@ -242,7 +242,7 @@ export async function sendMapViolationAlert(params: MapViolationAlertParams): Pr
 <body style="margin:0;padding:32px 12px;background:#f4f4f5;font-family:Inter,system-ui,sans-serif;color:#18181b">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
   <div style="background:#dc2626;padding:24px 28px">
-    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">PriceWatch · MAP Alert</div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.78);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Pricingspy · MAP Alert</div>
     <div style="font-size:24px;line-height:1.25;font-weight:800;color:#fff;margin:0">MAP Policy Violation</div>
     <div style="font-size:14px;color:rgba(255,255,255,0.86);margin-top:6px">
       <strong>${name}</strong> is advertising <strong>${productTitle}</strong> below your MAP floor.
@@ -273,7 +273,7 @@ export async function sendMapViolationAlert(params: MapViolationAlertParams): Pr
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
 
   if (!apiKey) {
     return { skipped: true, reason: 'missing_resend_api_key', provider: 'resend', messageId: null, to, from, subject }
@@ -331,7 +331,7 @@ ${params.applied ? 'Price automatically updated' : 'Reprice opportunity'}</div>
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
   if (!apiKey) return { skipped: true, reason: 'missing_resend_api_key', provider: 'resend', messageId: null, to, from, subject }
 
   const { Resend } = await import('resend')

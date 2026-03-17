@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       debug: {
         hasResendKey: Boolean(process.env.RESEND_KEY),
         hasResendApiKey: Boolean(process.env.RESEND_API_KEY),
-        emailFrom: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+        emailFrom: process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com',
         emailProvider: process.env.EMAIL_PROVIDER ?? 'resend',
       },
     })

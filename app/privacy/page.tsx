@@ -15,7 +15,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-lg font-bold text-gray-900 mb-2">1. Information We Collect</h2>
             <p>
-              PriceWatch collects account details (such as your name and email), Shopify store connection data,
+              Pricingspy collects account details (such as your name and email), Shopify store connection data,
               and product or competitor URLs you add to the platform to provide price monitoring services.
             </p>
           </section>
@@ -24,7 +24,7 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-2">2. How We Use Information</h2>
             <p>
               We use your information to operate the service, run price checks, deliver alerts, process billing,
-              and improve the reliability and performance of PriceWatch.
+              and improve the reliability and performance of Pricingspy.
             </p>
           </section>
 
@@ -32,7 +32,7 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-2">3. Data Sharing</h2>
             <p>
               We do not sell your personal information. We may share limited data with trusted service providers
-              (for example, payment processing, infrastructure, and email delivery) strictly to run PriceWatch.
+              (for example, payment processing, infrastructure, and email delivery) strictly to run Pricingspy.
             </p>
           </section>
 
@@ -64,8 +64,8 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-2">7. Contact</h2>
             <p>
               For privacy-related questions, contact us at{' '}
-              <a className="text-black underline" href="mailto:support@pricewatch.app">
-                support@pricewatch.app
+              <a className="text-black underline" href="mailto:eaconsulting.supp@gmail.com">
+                eaconsulting.supp@gmail.com
               </a>
               .
             </p>

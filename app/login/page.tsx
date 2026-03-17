@@ -68,8 +68,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-8">
-            <Image src="/logo.png" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
-            <span className="font-bold">PriceWatch</span>
+            <Image src="/logo.png" alt="Pricingspy logo" width={28} height={28} className="rounded-md" />
+            <span className="font-bold">Pricingspy</span>
           </Link>
           <h1 className="text-2xl font-extrabold tracking-tight">Welcome back</h1>
           <p className="text-gray-500 text-sm mt-1">Sign in with a magic link — no password needed</p>
