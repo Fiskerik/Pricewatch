@@ -37,7 +37,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
   const SidebarInner = (
     <div className="flex flex-col h-full">
       <div className="px-5 pb-5 border-b border-gray-100">
-        <Link href="/" className="flex items-center gap-2" onClick={() => setMobileOpen(false)}>
+        <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setMobileOpen(false)}>
           <Image src="/logo.png" alt="PriceWatch logo" width={28} height={28} className="rounded-md" />
           <span className="font-bold text-sm">PriceWatch</span>
         </Link>
@@ -110,7 +110,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
   return (
     <>
       <div className="lg:hidden w-full bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/dashboard" className="flex items-center gap-2">
           <Image src="/logo.png" alt="PriceWatch logo" width={24} height={24} className="rounded-md" />
           <span className="font-bold text-sm">PriceWatch</span>
         </Link>

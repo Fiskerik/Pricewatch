@@ -473,6 +473,38 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setDecimalShifts(prev => { const n = { ...prev }; delete n[competitorId]; return n })
   }
 
+  const handleToggleCompetitorAlert = async (competitorId: string, isActive: boolean) => {
+    const competitor = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === competitorId)
+    if (!competitor) return
+
+    setProducts(prev => prev.map(product => ({
+      ...product,
+      competitor_urls: (product.competitor_urls ?? []).map(c =>
+        c.id === competitorId ? { ...c, is_active: isActive } : c,
+      ),
+    })))
+
+    const response = await fetch('/api/competitors/update', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        competitorId,
+        url: competitor.url,
+        label: competitor.label,
+        isActive,
+      }),
+    }).catch(() => null)
+
+    if (!response?.ok) {
+      setProducts(prev => prev.map(product => ({
+        ...product,
+        competitor_urls: (product.competitor_urls ?? []).map(c =>
+          c.id === competitorId ? { ...c, is_active: !isActive } : c,
+        ),
+      })))
+    }
+  }
+
   const handleProductCurrencyUpdated = (productId: string, currencyCode: string, converted?: {
     product?: { id: string; currency_code: string; our_price: number | null }
     competitors?: { id: string; last_price: number | null; last_price_currency: string | null }[]
@@ -767,6 +799,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       onAddCompetitor={() => setAddCompetitorFor(product.id)}
                       onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                       onRefreshCompetitor={triggerBackgroundFetch}
+                      onToggleCompetitorAlert={handleToggleCompetitorAlert}
                       onCurrencyUpdated={handleProductCurrencyUpdated}
                       competitorLimit={limits.competitors}
                       showVat={showVat}

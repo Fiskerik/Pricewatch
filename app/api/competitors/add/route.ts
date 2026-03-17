@@ -163,6 +163,7 @@ export async function POST(req: NextRequest) {
       match_confidence: matchConfidence,
       mismatch_reasons: mismatchReasons,
       preflight_signals: preflightSignals,
+      is_active: true,
     })
     .select()
     .single()
