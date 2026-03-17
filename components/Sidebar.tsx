@@ -88,9 +88,37 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
             </>
           )}
           {plan === 'free' && (
-            <Link href="/dashboard/upgrade" className="block w-full text-center bg-purple-600 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-purple-700 transition-colors" onClick={() => setMobileOpen(false)}>
-              Upgrade to Pro →
-            </Link>
+            <div className="space-y-2">
+              <div className="text-[11px] text-purple-700 font-semibold">Unlock more tracking with Pro or Business.</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Link
+                  href="/dashboard/upgrade"
+                  className="block w-full text-center bg-purple-600 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-purple-700 transition-colors"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Upgrade Pro
+                </Link>
+                <Link
+                  href="/dashboard/upgrade"
+                  className="block w-full text-center bg-white text-purple-700 text-xs font-bold py-1.5 rounded-lg border border-purple-200 hover:bg-purple-100 transition-colors"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Upgrade Business
+                </Link>
+              </div>
+            </div>
+          )}
+          {plan === 'pro' && (
+            <div className="space-y-2">
+              <div className="text-[11px] text-purple-700 font-semibold">Need unlimited limits? Go Business.</div>
+              <Link
+                href="/dashboard/upgrade"
+                className="block w-full text-center bg-purple-600 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-purple-700 transition-colors"
+                onClick={() => setMobileOpen(false)}
+              >
+                Upgrade to Business →
+              </Link>
+            </div>
           )}
         </div>
       </div>
