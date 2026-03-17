@@ -15,18 +15,15 @@ export const supabaseServer = () =>
 let adminClient: any = null
 
 export const supabaseAdmin = (): any => {
-  if (adminClient) return adminClient
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Missing Supabase service credentials: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.')
+    throw new Error('Missing Supabase service credentials')
   }
 
-  adminClient = createClient(supabaseUrl, serviceRoleKey, {
+  // Don't cache — env vars may not be ready at module init
+  return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
-
-  return adminClient
 }
