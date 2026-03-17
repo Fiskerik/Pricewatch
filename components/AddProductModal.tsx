@@ -25,11 +25,12 @@ interface Props {
   onClose: () => void
   onAdded: (product: Product) => void
   onUpdated?: (product: Product) => void
+  onDeleted?: (productId: string) => void
   mode?: 'add' | 'edit'
   product?: Product | null
 }
 
-export default function AddProductModal({ storeId, plan = 'free', onClose, onAdded, onUpdated, mode = 'add', product }: Props) {
+export default function AddProductModal({ storeId, plan = 'free', onClose, onAdded, onUpdated, onDeleted, mode = 'add', product }: Props) {
   const supabase = createClientComponentClient()
   const isEditMode = mode === 'edit' && !!product
 
@@ -49,6 +50,7 @@ export default function AddProductModal({ storeId, plan = 'free', onClose, onAdd
   const [loadingStores, setLoadingStores] = useState(true)
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mapFloorPrice, setMapFloorPrice] = useState(
   product?.map_floor_price !== null && product?.map_floor_price !== undefined 
@@ -262,6 +264,36 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
       setError(err instanceof Error ? err.message : 'Failed to save product')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!isEditMode || !product) return
+
+    const confirmed = window.confirm('Delete this product? Warning: all underlaying competitors will also be deleted.')
+    if (!confirmed) return
+
+    setDeleting(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/products/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: product.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete product')
+      }
+
+      onDeleted?.(product.id)
+      onClose()
+    } catch (err) {
+      console.error('Delete error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to delete product')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -568,6 +600,16 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
 
           {/* Actions */}
           <div className="flex gap-3 pt-2">
+            {isEditMode && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting || saving}
+                className="border border-red-200 text-red-600 font-semibold text-sm py-2.5 px-4 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-40"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            )}
             <button 
               type="button" 
               onClick={onClose} 
@@ -577,7 +619,7 @@ const [mapEnabled, setMapEnabled] = useState(product?.map_enabled ?? false)
             </button>
             <button 
               type="submit" 
-              disabled={saving || !title || !selectedStoreId} 
+              disabled={saving || deleting || !title || !selectedStoreId} 
               className="flex-1 bg-black text-white font-bold text-sm py-2.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? (isEditMode ? 'Saving...' : 'Adding...') : (isEditMode ? 'Save Changes' : 'Add Product')}

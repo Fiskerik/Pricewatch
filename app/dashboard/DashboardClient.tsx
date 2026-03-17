@@ -394,6 +394,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
     setEditingProduct(null)
   }
 
+  const handleProductDeleted = (productId: string) => {
+    setProducts(prev => prev.filter(product => product.id !== productId))
+    setEditingProduct(null)
+  }
+
   const handleCompetitorAdded = (productId: string, competitor: CompetitorUrl) => {
     setProducts(prev => prev.map(p =>
       p.id !== productId ? p : { ...p, competitor_urls: [...(p.competitor_urls ?? []), competitor] }
@@ -885,6 +890,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
           onClose={() => setEditingProduct(null)}
           onAdded={() => {}}
           onUpdated={handleProductUpdated}
+          onDeleted={handleProductDeleted}
         />
       )}
     </div>
