@@ -6,6 +6,21 @@ import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
+const STORE_LIMITS: Record<string, number> = {
+  free: 1,
+  pro: 3,
+  business: 10,
+}
+
+const resolveStoreLimit = (plan: string | null | undefined) => {
+  const normalizedPlan = (plan || 'free').toLowerCase()
+  return {
+    plan: normalizedPlan,
+    limit: STORE_LIMITS[normalizedPlan] ?? STORE_LIMITS.free,
+  }
+}
+
+
 async function ensureGdprWebhookSubscriptions({ shop, accessToken, appOrigin }: { shop: string, accessToken: string, appOrigin: string }) {
   const callbackBase = `${appOrigin}/api/shopify/webhooks`
   const targets = [
@@ -122,6 +137,33 @@ export async function GET(req: NextRequest) {
       .eq('shop_domain', shop)
       .single()
 
+    const { data: userStores, error: userStoresError } = await supabaseAdmin()
+      .from('stores')
+      .select('id, plan, shop_domain, is_primary')
+      .eq('user_id', user.id)
+
+    if (userStoresError) {
+      throw new Error(`Failed to fetch stores for limit validation: ${userStoresError.message}`)
+    }
+
+    const normalizedUserStores = userStores || []
+    const primaryStoreForPlan = normalizedUserStores.find((store: any) => store.is_primary) ?? normalizedUserStores[0]
+    const { plan, limit } = resolveStoreLimit(primaryStoreForPlan?.plan)
+    const connectedStoresCount = normalizedUserStores.filter((store: any) => store.shop_domain).length
+
+    console.log('[shopify/callback] validating store limit', {
+      userId: user.id,
+      plan,
+      limit,
+      connectedStoresCount,
+      targetShop: shop,
+      hasExistingStore: Boolean(existingStore),
+    })
+
+    if (!existingStore && connectedStoresCount >= limit) {
+      return NextResponse.redirect(new URL(`/dashboard/settings?error=store_limit&plan=${plan}&limit=${limit}`, req.url))
+    }
+
     let store
 
     if (existingStore) {
@@ -139,12 +181,7 @@ export async function GET(req: NextRequest) {
       if (error) throw new Error('Failed to update store')
       store = updatedStore
     } else {
-      const { data: userStores } = await supabaseAdmin()
-        .from('stores')
-        .select('id')
-        .eq('user_id', user.id)
-
-      const isFirstStore = !userStores || userStores.length === 0
+      const isFirstStore = normalizedUserStores.length === 0
 
       const { data: newStore, error } = await supabaseAdmin()
         .from('stores')
