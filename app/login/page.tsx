@@ -77,22 +77,34 @@ export default function LoginPage() {
     setAuthError(null)
 
     const normalizedEmail = email.trim().toLowerCase()
-    if (normalizedEmail === TEST_USER_EMAIL && password === TEST_USER_PASSWORD) {
-      console.log('Ensuring test user exists before password login', { email: normalizedEmail })
-      const ensureRes = await fetch('/api/auth/ensure-test-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password }),
-      })
+    if (normalizedEmail !== TEST_USER_EMAIL) {
+      console.warn('Blocked password login for non-test user', { email: normalizedEmail })
+      setAuthError('Password login is only available for the test account right now. Use magic link or Google.')
+      setPasswordLoading(false)
+      return
+    }
 
-      if (!ensureRes.ok) {
-        const ensurePayload = await ensureRes.json().catch(() => null)
-        const ensureMessage = ensurePayload?.error ?? 'Could not prepare test user account.'
-        console.error('Ensuring test user failed:', ensureMessage)
-        setAuthError(ensureMessage)
-        setPasswordLoading(false)
-        return
-      }
+    if (password !== TEST_USER_PASSWORD) {
+      console.warn('Rejected test user login with invalid password', { email: normalizedEmail })
+      setAuthError('Invalid password for the test account.')
+      setPasswordLoading(false)
+      return
+    }
+
+    console.log('Ensuring test user exists before password login', { email: normalizedEmail })
+    const ensureRes = await fetch('/api/auth/ensure-test-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedEmail, password }),
+    })
+
+    if (!ensureRes.ok) {
+      const ensurePayload = await ensureRes.json().catch(() => null)
+      const ensureMessage = ensurePayload?.error ?? 'Could not prepare test user account.'
+      console.error('Ensuring test user failed:', ensureMessage)
+      setAuthError(ensureMessage)
+      setPasswordLoading(false)
+      return
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
