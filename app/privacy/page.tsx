@@ -64,8 +64,8 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-2">7. Contact</h2>
             <p>
               For privacy-related questions, contact us at{' '}
-              <a className="text-black underline" href="mailto:support@pricingspy.app">
-                support@pricingspy.app
+              <a className="text-black underline" href="mailto:eaconsulting.supp@gmail.com">
+                eaconsulting.supp@gmail.com
               </a>
               .
             </p>

@@ -110,7 +110,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
     </a>
   </div>
   <div style="padding:16px 28px 20px;border-top:1px solid #f0f0f0;font-size:11px;color:#71717a;text-align:center;line-height:1.6">
-    Not seeing alerts? Check your spam/junk folder and add <strong>onboarding@resend.dev</strong> as a safe sender.<br/>
+    Not seeing alerts? Check your spam/junk folder and add <strong>eaconsulting.supp@gmail.com</strong> as a safe sender.<br/>
     Pricingspy &nbsp;&middot;&nbsp;
     <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color:#a1a1aa;text-decoration:underline">Dashboard</a>
     &nbsp;&middot;&nbsp;
@@ -120,7 +120,7 @@ export async function sendPriceAlert(params: PriceAlertParams): Promise<EmailSen
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
 
   if (!apiKey) {
     return {
@@ -184,7 +184,7 @@ export async function sendStockAlert(params: StockAlertParams): Promise<EmailSen
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
 
   if (!apiKey) {
     return {
@@ -273,7 +273,7 @@ export async function sendMapViolationAlert(params: MapViolationAlertParams): Pr
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
 
   if (!apiKey) {
     return { skipped: true, reason: 'missing_resend_api_key', provider: 'resend', messageId: null, to, from, subject }
@@ -331,7 +331,7 @@ ${params.applied ? 'Price automatically updated' : 'Reprice opportunity'}</div>
 </body></html>`
 
   const apiKey = process.env.RESEND_KEY ?? process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  const from = process.env.EMAIL_FROM ?? 'eaconsulting.supp@gmail.com'
   if (!apiKey) return { skipped: true, reason: 'missing_resend_api_key', provider: 'resend', messageId: null, to, from, subject }
 
   const { Resend } = await import('resend')
