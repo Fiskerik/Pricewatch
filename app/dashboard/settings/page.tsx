@@ -55,8 +55,12 @@ function SettingsContent() {
   const [mockLoading, setMockLoading] = useState(false)
   const [billingLoading, setBillingLoading] = useState(false)
   const [passwordChangeLoading, setPasswordChangeLoading] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false)
   const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [mockMessage, setMockMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -208,6 +212,11 @@ function SettingsContent() {
   }
 
   const handleChangePassword = async () => {
+    if (!currentPassword) {
+      setPasswordMessage({ type: 'error', text: 'Enter your current password.' })
+      return
+    }
+
     if (newPassword.length < 8) {
       setPasswordMessage({ type: 'error', text: 'Password must be at least 8 characters long.' })
       return
@@ -222,6 +231,20 @@ function SettingsContent() {
     setPasswordMessage(null)
 
     try {
+      if (!user?.email) {
+        setPasswordMessage({ type: 'error', text: 'Could not verify your account email. Try again.' })
+        return
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      })
+      if (signInError) {
+        setPasswordMessage({ type: 'error', text: 'Current password is incorrect.' })
+        return
+      }
+
       const { error } = await supabase.auth.updateUser({ password: newPassword })
       if (error) {
         setPasswordMessage({ type: 'error', text: error.message })
@@ -229,6 +252,7 @@ function SettingsContent() {
       }
 
       setPasswordMessage({ type: 'success', text: 'Password updated successfully.' })
+      setCurrentPassword('')
       setNewPassword('')
       setConfirmNewPassword('')
     } catch {
@@ -356,32 +380,72 @@ function SettingsContent() {
             <p className="text-xs text-gray-500 mb-4">Change your password for email login.</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Current password</label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-2 text-gray-500 text-sm"
+                    aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                  >
+                    {showCurrentPassword ? '🙈' : '👁'}
+                  </button>
+                </div>
+              </div>
               <div>
                 <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">New password</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  placeholder="Minimum 8 characters"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="Minimum 8 characters"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-2 text-gray-500 text-sm"
+                    aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                  >
+                    {showNewPassword ? '🙈' : '👁'}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Confirm new password</label>
-                <input
-                  type="password"
-                  value={confirmNewPassword}
-                  onChange={(event) => setConfirmNewPassword(event.target.value)}
-                  placeholder="Re-enter new password"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
+                <div className="relative">
+                  <input
+                    type={showConfirmNewPassword ? 'text' : 'password'}
+                    value={confirmNewPassword}
+                    onChange={(event) => setConfirmNewPassword(event.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmNewPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-2 text-gray-500 text-sm"
+                    aria-label={showConfirmNewPassword ? 'Hide confirm new password' : 'Show confirm new password'}
+                  >
+                    {showConfirmNewPassword ? '🙈' : '👁'}
+                  </button>
+                </div>
               </div>
             </div>
 
             <div className="mt-3">
               <button
                 onClick={handleChangePassword}
-                disabled={passwordChangeLoading || !newPassword || !confirmNewPassword}
+                disabled={passwordChangeLoading || !currentPassword || !newPassword || !confirmNewPassword}
                 className="text-sm font-semibold text-white bg-black px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
               >
                 {passwordChangeLoading ? 'Updating…' : 'Update password'}
