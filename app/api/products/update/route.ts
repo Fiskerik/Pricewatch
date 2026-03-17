@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest) {
 
   const { data: store, error: storeError } = await supabase
     .from('stores')
-    .select('id')
+    .select('id, plan')
     .eq('id', product.store_id)
     .eq('user_id', user.id)
     .single()
@@ -39,6 +39,8 @@ export async function PATCH(req: NextRequest) {
 
   if (!store) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
 
+  const canUseAutoPrice = store.plan === 'pro' || store.plan === 'business'
+
   const updatePayload = {
     title: String(title).trim(),
     our_price: typeof ourPrice === 'number' && Number.isFinite(ourPrice) ? ourPrice : null,
@@ -47,9 +49,9 @@ export async function PATCH(req: NextRequest) {
     image_url: typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null,
     map_floor_price: typeof mapFloorPrice === 'number' && mapFloorPrice > 0 ? mapFloorPrice : null,
     map_enabled: typeof mapEnabled === 'boolean' ? mapEnabled : false,
-    auto_price_enabled: typeof autoPriceEnabled === 'boolean' ? autoPriceEnabled : false,
-    auto_price_undercut_type: autoPriceEnabled && (autoPriceUndercutType === 'percent' || autoPriceUndercutType === 'fixed') ? autoPriceUndercutType : null,
-    auto_price_undercut_value: autoPriceEnabled && typeof autoPriceUndercutValue === 'number' && Number.isFinite(autoPriceUndercutValue)
+    auto_price_enabled: canUseAutoPrice && typeof autoPriceEnabled === 'boolean' ? autoPriceEnabled : false,
+    auto_price_undercut_type: canUseAutoPrice && autoPriceEnabled && (autoPriceUndercutType === 'percent' || autoPriceUndercutType === 'fixed') ? autoPriceUndercutType : null,
+    auto_price_undercut_value: canUseAutoPrice && autoPriceEnabled && typeof autoPriceUndercutValue === 'number' && Number.isFinite(autoPriceUndercutValue)
       ? autoPriceUndercutValue
       : null,
   }

@@ -22,7 +22,7 @@ function getDomainFromUrl(url: string): string {
 }
 
 function getDueThresholdIso(plan: string): string {
-  const hours = plan === 'free' ? 24 : 1
+  const hours = plan === 'business' ? 1 : 24
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
 }
 
