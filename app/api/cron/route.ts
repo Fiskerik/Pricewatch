@@ -4,6 +4,7 @@ import { scrapePrice } from '@/lib/scraper'
 import { sendPriceAlert, sendStockAlert, sendMapViolationAlert, sendAutoPriceSuggestion } from '@/lib/email'
 import { FailureReasonCode } from '@/lib/scraper/shared'
 import { updateShopifyVariantPrice } from '@/lib/shopify'
+import { getPlanUsageStatus } from '@/lib/planLimits'
 
 const MAX_ENQUEUE_PER_RUN = 500
 const PROCESS_BATCH_SIZE = 100
@@ -38,7 +39,9 @@ async function enqueueDueChecks(admin: any) {
     .select(`
       id, url, last_checked_at,
       products (
+        id,
         stores (
+          id,
           plan
         )
       )
@@ -50,7 +53,43 @@ async function enqueueDueChecks(admin: any) {
     throw new Error(`Failed to fetch due competitors: ${error?.message ?? 'unknown error'}`)
   }
 
+  const storesById = new Map<string, { plan: string | null; products: Map<string, { id: string; competitor_urls: { id: string }[] }> }>()
+  for (const comp of (competitors as any[])) {
+    const productId = comp.products?.id
+    const storeId = comp.products?.stores?.id
+    if (!productId || !storeId) continue
+
+    let storeEntry = storesById.get(storeId)
+    if (!storeEntry) {
+      storeEntry = {
+        plan: comp.products?.stores?.plan ?? 'free',
+        products: new Map(),
+      }
+      storesById.set(storeId, storeEntry)
+    }
+
+    const existingProduct = storeEntry.products.get(productId)
+    if (existingProduct) {
+      existingProduct.competitor_urls.push({ id: comp.id })
+      continue
+    }
+
+    storeEntry.products.set(productId, { id: productId, competitor_urls: [{ id: comp.id }] })
+  }
+
+  const pausedProductIds = new Set<string>()
+  for (const storeEntry of Array.from(storesById.values())) {
+    const storeProducts = Array.from(storeEntry.products.values())
+    const usage = getPlanUsageStatus(storeEntry.plan, storeProducts as any)
+    if (usage.isPaused) {
+      for (const product of storeProducts) {
+        pausedProductIds.add(product.id)
+      }
+    }
+  }
+
   const dueCompetitors = (competitors as any[]).filter(comp => {
+    if (pausedProductIds.has(comp.products?.id)) return false
     const plan = comp.products?.stores?.plan ?? 'free'
     const threshold = getDueThresholdIso(plan)
     return !comp.last_checked_at || comp.last_checked_at < threshold

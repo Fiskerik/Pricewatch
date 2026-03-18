@@ -41,9 +41,10 @@ interface Props {
   store: Store | null
   initialProducts: Product[]
   initialAlerts: any[]
+  initialPlanPaused: boolean
 }
 
-export default function DashboardClient({ user, store, initialProducts, initialAlerts }: Props) {
+export default function DashboardClient({ user, store, initialProducts, initialAlerts, initialPlanPaused }: Props) {
   const [products, setProducts] = useState<Product[]>(initialProducts)
   const [alerts] = useState(initialAlerts)
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
@@ -145,6 +146,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   const plan = store?.plan ?? 'free'
   const limits = PLAN_LIMITS[plan]
   const totalCompetitors = products.reduce((a, p) => a + (p.competitor_urls?.length ?? 0), 0)
+  const overProductLimit = limits.products !== Infinity && products.length > limits.products
+  const productsOverCompetitorLimit = limits.competitors === Infinity
+    ? 0
+    : products.filter(product => (product.competitor_urls?.length ?? 0) > limits.competitors).length
+  const planPaused = initialPlanPaused || overProductLimit || productsOverCompetitorLimit > 0
   const changedToday = products.reduce((a, p) =>
     a + (p.competitor_urls?.filter(c => {
       if (!c.last_changed_at) return false
@@ -236,6 +242,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }, [products, productMarketPosition])
 
   const triggerBackgroundFetch = (competitorId: string) => {
+    if (planPaused) return
     setFetchingIds(prev => ({ ...prev, [competitorId]: true }))
     fetch('/api/competitors/fetch', {
       method: 'POST',
@@ -327,6 +334,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   const handleConfirmPrice = async (id: string, includesVat: boolean) => {
+    if (planPaused) return
     const pending = pendingPrices[id]
     const competitor = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === id)
     if (!pending || !competitor) {
@@ -442,6 +450,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
   }
 
   const handleToggleCompetitorAlert = async (competitorId: string, isActive: boolean) => {
+    if (planPaused) return
     const competitor = products.flatMap(p => p.competitor_urls ?? []).find(c => c.id === competitorId)
     if (!competitor) return
 
@@ -536,13 +545,24 @@ export default function DashboardClient({ user, store, initialProducts, initialA
             )}
             <button
               onClick={() => setShowAddProduct(true)}
-              disabled={products.length >= limits.products && limits.products !== Infinity}
+              disabled={planPaused || (products.length >= limits.products && limits.products !== Infinity)}
               className="bg-black text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap w-full sm:w-auto"
             >
               + Add Product
             </button>
           </div>
         </div>
+
+        {planPaused && (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+            <p className="text-sm font-semibold text-amber-800">
+              Tracking is paused because your current {plan} plan is below your saved usage.
+            </p>
+            <p className="mt-1 text-sm text-amber-700">
+              Delete products or competitors until you are back within your tier limits. You cannot add more items until then.
+            </p>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 mb-4 lg:mb-5">
           <div className="flex items-start justify-between gap-3">
@@ -655,7 +675,11 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                 <div className="text-4xl mb-3">📦</div>
                 <h3 className="font-bold text-base mb-1">No products yet</h3>
                 <p className="text-sm text-gray-500 mb-5">Add your first product and start tracking competitor prices.</p>
-                <button onClick={() => setShowAddProduct(true)} className="bg-black text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-800 transition-colors">
+                <button
+                  onClick={() => !planPaused && setShowAddProduct(true)}
+                  disabled={planPaused}
+                  className="bg-black text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
                   Add your first product
                 </button>
               </div>
@@ -687,6 +711,7 @@ export default function DashboardClient({ user, store, initialProducts, initialA
                       onEditCompetitor={(competitor) => setEditingCompetitor({ productId: product.id, competitor })}
                       onRefreshCompetitor={triggerBackgroundFetch}
                       onToggleCompetitorAlert={handleToggleCompetitorAlert}
+                      planPaused={planPaused}
                       onCurrencyUpdated={handleProductCurrencyUpdated}
                       competitorLimit={limits.competitors}
                       showVat={showVat}

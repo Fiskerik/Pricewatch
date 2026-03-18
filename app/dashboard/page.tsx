@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import DashboardClient from './DashboardClient'
 import { isTestUserEmail } from '@/lib/auth'
+import { getPlanUsageStatus } from '@/lib/planLimits'
 
 export default async function DashboardPage() {
   const supabase = createServerComponentClient({ cookies })
@@ -51,6 +52,8 @@ export default async function DashboardPage() {
     .eq('store_id', store?.id ?? '')
     .order('created_at', { ascending: false })
 
+  const planUsage = getPlanUsageStatus(store?.plan, (products ?? []) as any)
+
   // Fetch recent alerts
   const { data: alerts } = await supabase
     .from('alerts_sent')
@@ -70,6 +73,7 @@ export default async function DashboardPage() {
       store={store}
       initialProducts={products ?? []}
       initialAlerts={alerts ?? []}
+      initialPlanPaused={planUsage.isPaused}
     />
   )
 }
