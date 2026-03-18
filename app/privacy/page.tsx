@@ -4,17 +4,17 @@ const complianceWebhookTopics = [
   {
     topic: 'customers/data_request',
     event: 'Requests to view stored customer data',
-    endpoint: '/api/shopify/webhooks/customers-data-request',
+    endpoint: '/api/shopify/webhooks/compliance',
   },
   {
     topic: 'customers/redact',
     event: 'Requests to delete customer data',
-    endpoint: '/api/shopify/webhooks/customers-redact',
+    endpoint: '/api/shopify/webhooks/compliance',
   },
   {
     topic: 'shop/redact',
     event: 'Requests to delete shop data',
-    endpoint: '/api/shopify/webhooks/shop-redact',
+    endpoint: '/api/shopify/webhooks/compliance',
   },
 ]
 
