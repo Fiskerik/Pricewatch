@@ -1,5 +1,5 @@
 [webhooks]
-api_version = "2024-07"
+api_version = "2025-04"
 
   [[webhooks.subscriptions]]
   topics = ["customers/data_request"]
