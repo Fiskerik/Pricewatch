@@ -1,6 +1,6 @@
 client_id = "0f537664f7a9cdfda5af723a97b7c689"
 name = "Pricingspy"
-application_url = "https://pricingspy.vercel.app/"
+application_url = "https://pricingspy.vercel.app/api/shopify/install"
 embedded = false
 
 [webhooks]
