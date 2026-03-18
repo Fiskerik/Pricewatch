@@ -1,5 +1,23 @@
 import Link from 'next/link'
 
+const complianceWebhookTopics = [
+  {
+    topic: 'customers/data_request',
+    event: 'Requests to view stored customer data',
+    endpoint: '/api/shopify/webhooks/customers-data-request',
+  },
+  {
+    topic: 'customers/redact',
+    event: 'Requests to delete customer data',
+    endpoint: '/api/shopify/webhooks/customers-redact',
+  },
+  {
+    topic: 'shop/redact',
+    event: 'Requests to delete shop data',
+    endpoint: '/api/shopify/webhooks/shop-redact',
+  },
+]
+
 export default function PrivacyPage() {
   return (
     <main className="min-h-screen bg-white text-gray-900">
@@ -53,7 +71,44 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-bold text-gray-900 mb-2">6. Your Rights</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">6. Shopify Compliance Webhooks</h2>
+            <p>
+              Pricingspy supports Shopify&apos;s required privacy compliance webhooks for customer data access,
+              customer redaction, and shop redaction requests. Shopify can send these requests to the following
+              endpoints:
+            </p>
+            <div className="mt-4 overflow-hidden rounded-xl border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
+                <thead className="bg-gray-50 text-gray-700">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Topic</th>
+                    <th className="px-4 py-3 font-semibold">Event</th>
+                    <th className="px-4 py-3 font-semibold">Endpoint</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {complianceWebhookTopics.map((webhook) => (
+                    <tr key={webhook.topic}>
+                      <td className="px-4 py-3 align-top">
+                        <code className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-800">{webhook.topic}</code>
+                      </td>
+                      <td className="px-4 py-3 align-top">{webhook.event}</td>
+                      <td className="px-4 py-3 align-top">
+                        <code className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-800">{webhook.endpoint}</code>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-4">
+              These webhook handlers verify Shopify signatures before processing requests and are used to support
+              privacy and data deletion obligations.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">7. Your Rights</h2>
             <p>
               Depending on your location, you may have rights to access, correct, or delete your personal
               information. Contact us to submit a request.
@@ -61,7 +116,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-bold text-gray-900 mb-2">7. Contact</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">8. Contact</h2>
             <p>
               For privacy-related questions, contact us at{' '}
               <a className="text-black underline" href="mailto:eaconsulting.supp@gmail.com">

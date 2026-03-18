@@ -1,0 +1,14 @@
+[webhooks]
+api_version = "2024-07"
+
+  [[webhooks.subscriptions]]
+  topics = ["customers/data_request"]
+  uri = "/api/shopify/webhooks/customers-data-request"
+
+  [[webhooks.subscriptions]]
+  topics = ["customers/redact"]
+  uri = "/api/shopify/webhooks/customers-redact"
+
+  [[webhooks.subscriptions]]
+  topics = ["shop/redact"]
+  uri = "/api/shopify/webhooks/shop-redact"
