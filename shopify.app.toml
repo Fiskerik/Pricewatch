@@ -1,23 +1,25 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "685080b0f0ec58a450d6444f99696d58"
-name = "PricingSpy"
+client_id = "0f537664f7a9cdfda5af723a97b7c689"
+name = "Pricingspy "
 application_url = "https://pricingspy.vercel.app/"
 embedded = false
-
-[build]
-automatically_update_urls_on_dev = true
 
 [webhooks]
 api_version = "2026-01"
 
- [[webhooks.subscriptions]]
+  [[webhooks.subscriptions]]
   uri = "/api/shopify/webhooks/compliance"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products, write_products"
+scopes = "read_products,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ "https://pricingspy.vercel.app/api/auth" ]
-
+redirect_urls = [
+  "https://pricingspy.vercel.app/api/auth",
+  "https://pricingspy.vercel.app/api/shopify/callback"
+]
