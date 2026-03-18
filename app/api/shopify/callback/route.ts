@@ -167,12 +167,12 @@ export async function GET(req: NextRequest) {
     let store
 
     if (existingStore) {
-      const { data: updatedStore, error } = await supabaseAdmin()
-        .from('stores')
-        .update({
-          access_token,
-          shopify_scopes: grantedScopes,
-          store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
+     const { data: updatedStore, error } = await supabaseAdmin()
+      .from('stores')
+      .update({
+        access_token,
+        shopify_scopes: grantedScopes,
+        store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
         })
         .eq('id', existingStore.id)
         .select()
@@ -192,6 +192,7 @@ export async function GET(req: NextRequest) {
           shopify_scopes: grantedScopes,
           store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
           is_primary: isFirstStore,
+          plan: 'free',
         })
         .select()
         .single()
