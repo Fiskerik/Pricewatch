@@ -145,6 +145,10 @@ export async function GET(req: NextRequest) {
     if (userStoresError) {
       throw new Error(`Failed to fetch stores for limit validation: ${userStoresError.message}`)
     }
+    if (error) {
+      console.error('Store creation error:', error) // Add this
+      throw new Error('Failed to create store')
+    }
 
     const normalizedUserStores = userStores || []
     const primaryStoreForPlan = normalizedUserStores.find((store: any) => store.is_primary) ?? normalizedUserStores[0]
