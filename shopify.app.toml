@@ -1,7 +1,5 @@
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
-
 client_id = "0f537664f7a9cdfda5af723a97b7c689"
-name = "Pricingspy "
+name = "Pricingspy"
 application_url = "https://pricingspy.vercel.app/"
 embedded = false
 
@@ -9,16 +7,16 @@ embedded = false
 api_version = "2026-01"
 
   [[webhooks.subscriptions]]
+  topics = ["customers/data_request", "customers/redact", "shop/redact"]
   uri = "/api/shopify/webhooks/compliance"
-  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
-  
+
+  [[webhooks.subscriptions]]
   topics = ["app/uninstalled"]
   uri = "/api/shopify/webhooks/app/uninstalled"
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_products,write_products"
-optional_scopes = [ ]
+optional_scopes = []
 use_legacy_install_flow = false
 
 [auth]
