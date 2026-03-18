@@ -59,7 +59,16 @@ export default function UpgradePage() {
     setLoading(planId)
     setError(null)
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      // Kolla om användaren har en kopplad Shopify-store
+      const storeRes = await fetch('/api/stores/current')
+      const storeData = await storeRes.json()
+      const hasShopify = Boolean(storeData?.shop_domain)
+  
+      const endpoint = hasShopify
+        ? '/api/shopify/billing/checkout'
+        : '/api/stripe/checkout'
+  
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: planId }),
@@ -68,7 +77,7 @@ export default function UpgradePage() {
       if (data.url) {
         window.location.href = data.url
       } else {
-        setError(data.error || 'Could not start checkout. Please try again.')
+        setError(data.error || 'Could not start checkout.')
       }
     } catch {
       setError('Something went wrong. Please try again.')
