@@ -145,15 +145,12 @@ export async function GET(req: NextRequest) {
     if (userStoresError) {
       throw new Error(`Failed to fetch stores for limit validation: ${userStoresError.message}`)
     }
-    if (error) {
-      console.error('Store creation error:', error) // Add this
-      throw new Error('Failed to create store')
-    }
 
     const normalizedUserStores = userStores || []
     const primaryStoreForPlan = normalizedUserStores.find((store: any) => store.is_primary) ?? normalizedUserStores[0]
     const { plan, limit } = resolveStoreLimit(primaryStoreForPlan?.plan)
     const connectedStoresCount = normalizedUserStores.filter((store: any) => store.shop_domain).length
+    const reusableDisconnectedStore = normalizedUserStores.find((store: any) => !store.shop_domain)
 
     console.log('[shopify/callback] validating store limit', {
       userId: user.id,
@@ -162,32 +159,42 @@ export async function GET(req: NextRequest) {
       connectedStoresCount,
       targetShop: shop,
       hasExistingStore: Boolean(existingStore),
+      reusableDisconnectedStoreId: reusableDisconnectedStore?.id ?? null,
     })
 
-    if (!existingStore && connectedStoresCount >= limit) {
+    if (!existingStore && !reusableDisconnectedStore && connectedStoresCount >= limit) {
       return NextResponse.redirect(new URL(`/dashboard/settings?error=store_limit&plan=${plan}&limit=${limit}`, req.url))
     }
 
     let store
 
-    if (existingStore) {
-     const { data: updatedStore, error } = await supabaseAdmin()
-      .from('stores')
-      .update({
-        access_token,
-        shopify_scopes: grantedScopes,
-        store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
+    if (existingStore || reusableDisconnectedStore) {
+      const storeToUpdate = existingStore?.id ?? reusableDisconnectedStore?.id
+      const { data: updatedStore, error: updateError } = await supabaseAdmin()
+        .from('stores')
+        .update({
+          shop_domain: shop,
+          access_token,
+          shopify_scopes: grantedScopes,
+          store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
         })
-        .eq('id', existingStore.id)
+        .eq('id', storeToUpdate)
         .select()
         .single()
 
-      if (error) throw new Error('Failed to update store')
+      if (updateError) {
+        console.error('[shopify/callback] failed to update existing or reusable store', {
+          shop,
+          storeId: storeToUpdate,
+          message: updateError.message,
+        })
+        throw new Error('Failed to update store')
+      }
       store = updatedStore
     } else {
       const isFirstStore = normalizedUserStores.length === 0
 
-      const { data: newStore, error } = await supabaseAdmin()
+      const { data: newStore, error: insertError } = await supabaseAdmin()
         .from('stores')
         .insert({
           user_id: user.id,
@@ -196,12 +203,19 @@ export async function GET(req: NextRequest) {
           shopify_scopes: grantedScopes,
           store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
           is_primary: isFirstStore,
-          plan: 'free',
+          plan,
         })
         .select()
         .single()
 
-      if (error) throw new Error('Failed to create store')
+      if (insertError) {
+        console.error('[shopify/callback] failed to create store', {
+          shop,
+          userId: user.id,
+          message: insertError.message,
+        })
+        throw new Error('Failed to create store')
+      }
       store = newStore
     }
 
