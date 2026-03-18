@@ -343,34 +343,45 @@ function SettingsContent() {
         )}
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
-          <h2 className="font-bold text-base mb-4">Account</h2>
-          <div className="space-y-3">
-            <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Email</div>
-              <div className="text-sm font-medium text-gray-900">{user?.email}</div>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Plan</div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-900 capitalize">{primaryStore?.plan ?? 'Free'}</span>
-                {primaryStore?.plan === 'free' && (
-                  <Link
-                    href="/dashboard/upgrade"
-                    className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg hover:bg-purple-100 transition-colors"
-                  >
-                    Upgrade →
-                  </Link>
-                )}
-                {primaryStore?.plan === 'pro' && (
-                  <Link
-                    href="/dashboard/upgrade"
-                    className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg hover:bg-purple-100 transition-colors"
-                  >
-                    Upgrade to Business →
-                  </Link>
-                )}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex-1">
+              <h2 className="font-bold text-base mb-4">Account</h2>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Email</div>
+                  <div className="text-sm font-medium text-gray-900">{user?.email}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Plan</div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-gray-900 capitalize">{primaryStore?.plan ?? 'Free'}</span>
+                    {primaryStore?.plan === 'free' && (
+                      <Link
+                        href="/dashboard/upgrade"
+                        className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg hover:bg-purple-100 transition-colors"
+                      >
+                        Upgrade →
+                      </Link>
+                    )}
+                    {primaryStore?.plan === 'pro' && (
+                      <Link
+                        href="/dashboard/upgrade"
+                        className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg hover:bg-purple-100 transition-colors"
+                      >
+                        Upgrade to Business →
+                      </Link>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
+
+            <button
+              onClick={handleSignOut}
+              className="inline-flex items-center justify-center self-start text-sm font-semibold text-gray-700 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Sign out
+            </button>
           </div>
         </section>
 
@@ -643,9 +654,6 @@ function SettingsContent() {
           </div>
         </section>
 
-        <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
-          Sign out
-        </button>
       </div>
     </div>
   )
