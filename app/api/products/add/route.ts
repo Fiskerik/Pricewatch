@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import { getPlanUsageStatus } from '@/lib/planLimits'
 
 export async function POST(req: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies })
@@ -24,6 +25,27 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 })
+
+  const { data: existingProducts, error: productsError } = await supabase
+    .from('products')
+    .select('id, competitor_urls(id)')
+    .eq('store_id', storeId)
+
+  if (productsError) {
+    console.log('[products/add] failed loading existing products for plan validation', { storeId, userId: user.id, error: productsError.message })
+    return NextResponse.json({ error: 'Failed to validate your plan limits.' }, { status: 500 })
+  }
+
+  const usage = getPlanUsageStatus(store.plan, (existingProducts ?? []) as any)
+  if (usage.isPaused) {
+    return NextResponse.json({
+      error: 'Your current plan is below your saved usage. All tracking is paused until you delete enough products or competitors to get back within your tier limits.',
+    }, { status: 409 })
+  }
+
+  if (usage.productLimit !== Infinity && usage.productCount >= usage.productLimit) {
+    return NextResponse.json({ error: `Your ${usage.plan} plan allows up to ${usage.productLimit} products.` }, { status: 409 })
+  }
 
   const canUseAutoPrice = store.plan === 'pro' || store.plan === 'business'
 

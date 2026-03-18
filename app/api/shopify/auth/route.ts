@@ -55,6 +55,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL(`/dashboard/settings?error=store_limit&plan=${currentPlan}&limit=${storeLimit}`, req.url))
   }
 
+  if (existingConnectedStore) {
+    return NextResponse.redirect(new URL(`/dashboard/settings?error=store_duplicate&shop=${encodeURIComponent(shop)}`, req.url))
+  }
+
   // Build Shopify OAuth URL manually
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
   const apiKey = process.env.SHOPIFY_API_KEY!

@@ -114,6 +114,7 @@ interface Props {
   onPendingDecimalShift: (competitorId: string, decimalShift: number) => void
   onConfirmPrice: (competitorId: string, includesVat: boolean) => void
   onRejectPrice: (competitorId: string) => void
+  planPaused?: boolean
 }
 
 function PriceHistoryChart({ history, currency }: { history: PriceHistory[]; currency: string }) {
@@ -227,6 +228,7 @@ export default function ProductCard({
   product, marketPosition = 'no_data', isExpanded, onToggle, onEditProduct, onAddCompetitor, onEditCompetitor, onRefreshCompetitor, onToggleCompetitorAlert,
   onCurrencyUpdated, competitorLimit, showVat, vatRate, competitorVatIncluded,
   fetchingIds, pendingPrices, onPendingVatIncludedChange, onPendingMetricChange, onPendingCurrencyChange, onPendingDecimalShift, onConfirmPrice, onRejectPrice,
+  planPaused = false,
 }: Props) {
   const competitors = product.competitor_urls ?? []
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
@@ -458,11 +460,12 @@ export default function ProductCard({
                         )}
                         <button
                           onClick={() => onToggleCompetitorAlert(comp.id, !alertsEnabled)}
+                          disabled={planPaused}
                           className={`relative w-8 h-8 rounded-md border text-sm transition-colors inline-flex items-center justify-center ${
                             alertsEnabled
                               ? 'border-amber-200 text-amber-600 hover:text-amber-700 hover:border-amber-300 bg-amber-50'
                               : 'border-gray-200 text-gray-400 bg-gray-100'
-                          }`}
+                          } disabled:opacity-40 disabled:cursor-not-allowed`}
                           title={alertsEnabled ? 'Disable alerts for this competitor' : 'Enable alerts for this competitor'}
                           aria-label={alertsEnabled ? 'Disable alerts' : 'Enable alerts'}
                         >
@@ -475,7 +478,7 @@ export default function ProductCard({
                         </button>
                         <button
                           onClick={() => onRefreshCompetitor(comp.id)}
-                          disabled={isFetching}
+                          disabled={isFetching || planPaused}
                           className="w-8 h-8 rounded-md border border-gray-200 text-gray-500 hover:text-black hover:border-gray-400 transition-colors text-sm disabled:opacity-30 disabled:cursor-not-allowed"
                           title="Re-fetch price"
                         >
@@ -685,7 +688,8 @@ export default function ProductCard({
                         >✕ Wrong</button>
                         <button
                           onClick={() => onConfirmPrice(comp.id, pending.includesVat)}
-                          className="text-xs font-semibold text-white bg-black px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors flex-1 sm:flex-none"
+                          disabled={planPaused}
+                          className="text-xs font-semibold text-white bg-black px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors flex-1 sm:flex-none disabled:opacity-40 disabled:cursor-not-allowed"
                         >✓ Correct</button>
                       </div>
                     </div>
@@ -698,10 +702,10 @@ export default function ProductCard({
           <div className="grid grid-cols-1 gap-2">
             <button
               onClick={onAddCompetitor}
-              disabled={atLimit}
+              disabled={atLimit || planPaused}
               className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-400 hover:border-gray-400 hover:text-gray-600 active:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {atLimit ? `Competitor limit reached (${competitorLimit})` : '+ Add competitor URL'}
+              {planPaused ? 'Delete competitors to get back within your plan limits' : atLimit ? `Competitor limit reached (${competitorLimit})` : '+ Add competitor URL'}
             </button>
           </div>
         </div>

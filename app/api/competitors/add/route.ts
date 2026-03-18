@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase'
 import { cleanUrl } from '@/lib/scraper'
 import { evaluateCompetitorMatch, runCompetitorPreflight } from '@/lib/competitorMatch'
+import { getPlanUsageStatus } from '@/lib/planLimits'
 
 // ── Tracking params to strip from any URL ───────────────────────────────────
 const TRACKING_PARAMS = [
@@ -115,12 +116,38 @@ export async function POST(req: NextRequest) {
 
   const { data: product } = await supabase
     .from('products')
-    .select('*, stores!inner(user_id)')
+    .select('*, competitor_urls(id), stores!inner(user_id, plan)')
     .eq('id', productId)
     .eq('stores.user_id', user.id)
     .single()
 
   if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+
+  const { data: storeProducts, error: storeProductsError } = await supabase
+    .from('products')
+    .select('id, competitor_urls(id)')
+    .eq('store_id', (product as any).store_id)
+
+  if (storeProductsError) {
+    console.log('[competitors/add] failed loading store products for plan validation', {
+      productId,
+      storeId: (product as any).store_id,
+      error: storeProductsError.message,
+    })
+    return NextResponse.json({ error: 'Failed to validate your plan limits.' }, { status: 500 })
+  }
+
+  const usage = getPlanUsageStatus((product as any)?.stores?.plan, (storeProducts ?? []) as any)
+
+  if (usage.isPaused) {
+    return NextResponse.json({
+      error: 'Your current plan is below your saved usage. Tracking is paused, and you can only delete products or competitors until you are back within your tier limits.',
+    }, { status: 409 })
+  }
+
+  if (usage.competitorLimit !== Infinity && ((product as any)?.competitor_urls?.length ?? 0) >= usage.competitorLimit) {
+    return NextResponse.json({ error: `Your ${usage.plan} plan allows up to ${usage.competitorLimit} competitors per product.` }, { status: 409 })
+  }
 
   let preflightSignals = null as any
   let matchConfidence = 0

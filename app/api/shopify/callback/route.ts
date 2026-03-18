@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
     if (!access_token) throw new Error('No access token received')
 
     // 2. Fetch granted scopes from Shopify
-    let grantedScopes = ''
+    let grantedScopes: string | null = null
     try {
       const accessInfoRes = await fetch(
         `https://${shop}/admin/oauth/access_scopes.json`,
@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
     // 3. Check if store already connected
     const { data: existingStore } = await supabaseAdmin()
       .from('stores')
-      .select('id')
+      .select('id, shopify_scopes')
       .eq('user_id', user.id)
       .eq('shop_domain', shop)
       .single()
@@ -175,7 +175,9 @@ export async function GET(req: NextRequest) {
         .update({
           shop_domain: shop,
           access_token,
-          shopify_scopes: grantedScopes,
+          shopify_scopes: grantedScopes && grantedScopes.length > 0
+            ? grantedScopes
+            : (existingStore?.shopify_scopes ?? 'read_products,write_products'),
           store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
         })
         .eq('id', storeToUpdate)
@@ -200,7 +202,7 @@ export async function GET(req: NextRequest) {
           user_id: user.id,
           shop_domain: shop,
           access_token,
-          shopify_scopes: grantedScopes,
+          shopify_scopes: grantedScopes && grantedScopes.length > 0 ? grantedScopes : 'read_products,write_products',
           store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
           is_primary: isFirstStore,
           plan,

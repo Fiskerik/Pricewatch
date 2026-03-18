@@ -336,6 +336,12 @@ function SettingsContent() {
           </div>
         )}
 
+        {searchParams?.get('error') === 'store_duplicate' && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-xl px-4 py-3 mb-6">
+            This Shopify store is already connected{searchParams?.get('shop') ? <>: <span className="font-semibold">{searchParams.get('shop')}</span></> : null}. Disconnect it first if you want to reconnect it from scratch.
+          </div>
+        )}
+
         {searchParams?.get('error') === 'store_limit' && (
           <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-xl px-4 py-3 mb-6">
             Store limit reached for your plan. You can link up to <span className="font-semibold">{searchParams?.get('limit') ?? String(storeLimit)}</span> store(s) on the <span className="font-semibold capitalize">{searchParams?.get('plan') ?? currentPlan}</span> plan.
