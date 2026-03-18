@@ -263,8 +263,11 @@ function SettingsContent() {
   }
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/')
+    console.log('Signing out from settings page')
+    await supabase.auth.signOut({ scope: 'global' })
+    router.replace('/login')
+    router.refresh()
+    window.location.replace('/login')
   }
 
   const handleOpenBillingPortal = async () => {
