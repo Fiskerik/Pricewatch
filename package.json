@@ -19,6 +19,7 @@
     "react": "^18",
     "react-dom": "^18",
     "resend": "^3.4.0",
+    "shopify": "^3.92.1",
     "stripe": "^16.2.0"
   },
   "devDependencies": {
