@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
   if (lastChecked) {
     const minutesSince = (Date.now() - new Date(lastChecked).getTime()) / 60000
-    const cooldownMinutes = plan === 'free' ? 60 : plan === 'pro' ? 30 : 10
+    const cooldownMinutes = plan === 'free' ? 60 : plan === 'pro' ? 5 : 10
     
     if (minutesSince < cooldownMinutes) {
       return NextResponse.json({ 

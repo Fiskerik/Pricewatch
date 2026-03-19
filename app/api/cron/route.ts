@@ -10,7 +10,7 @@ const MAX_ENQUEUE_PER_RUN = 500
 const PROCESS_BATCH_SIZE = 100
 const MAX_PROCESS_PER_RUN = 300
 const MAX_ATTEMPTS = 5
-const BASE_BACKOFF_MINUTES = 5
+const BASE_BACKOFF_MINUTES = 15
 
 type JobStatus = 'queued' | 'processing' | 'retrying' | 'success' | 'failed'
 
