@@ -1,4 +1,13 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+import { buildPageMetadata } from '@/lib/seo'
+
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Terms and Conditions',
+  description: 'Read the Pricingspy terms and conditions for subscriptions, billing, service availability, and platform use.',
+  path: '/terms',
+  keywords: ['Pricingspy terms', 'Shopify app terms and conditions'],
+})
 
 export default function TermsPage() {
   return (

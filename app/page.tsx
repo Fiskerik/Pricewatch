@@ -1,9 +1,87 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
+import { buildPageMetadata } from '@/lib/seo'
+
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Competitor Price Tracking for Shopify Stores',
+  description:
+    'Track competitor product prices for your Shopify store, get instant price change alerts, and make faster pricing decisions without manual checks.',
+  path: '/',
+  keywords: [
+    'Shopify competitor price tracker',
+    'competitor price alerts',
+    'monitor competitor prices',
+    'Shopify pricing software',
+  ],
+})
 
 export default function LandingPage() {
+  const appSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Pricingspy',
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    description:
+      'Competitor price monitoring software for Shopify sellers with automated tracking, alerts, and price history.',
+    offers: [
+      {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+        name: 'Free',
+      },
+      {
+        '@type': 'Offer',
+        price: '15',
+        priceCurrency: 'USD',
+        name: 'Pro',
+      },
+      {
+        '@type': 'Offer',
+        price: '39',
+        priceCurrency: 'USD',
+        name: 'Business',
+      },
+    ],
+  }
+
+  const faqSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'How does Pricingspy track competitor prices?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'You add competitor product URLs and Pricingspy checks them automatically, storing the latest price and alerting you when changes happen.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Who is Pricingspy built for?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Pricingspy is built for Shopify sellers who want a simple way to monitor competitor pricing and respond quickly to market changes.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Do I need a credit card to get started?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'No. You can start with the free plan without a credit card.',
+        },
+      },
+    ],
+  }
+
   return (
     <div className="min-h-screen bg-white text-gray-900">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(appSchema) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
       {/* Nav */}
       <nav className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-3 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 border-b border-gray-100 max-w-6xl mx-auto">
