@@ -1,4 +1,13 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+import { buildPageMetadata } from '@/lib/seo'
+
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Privacy Policy',
+  description: 'Read the Pricingspy privacy policy, including what data we collect, how we use it, and Shopify compliance webhook support.',
+  path: '/privacy',
+  keywords: ['Pricingspy privacy policy', 'Shopify app privacy policy'],
+})
 
 const complianceWebhookTopics = [
   {
