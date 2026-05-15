@@ -17,7 +17,7 @@ interface Store {
   is_primary: boolean
   created_at: string
   plan: string | null
-  stripe_customer_id?: string | null
+  shopify_charge_id?: string | null
   shopify_scopes?: string | null
 }
 
@@ -467,7 +467,7 @@ function SettingsContent() {
             Your subscription is managed through your Shopify admin.
           </p>
           {primaryStore?.shop_domain && (
-            
+            <a
               href={`https://${primaryStore.shop_domain}/admin/charges`}
               target="_blank"
               rel="noopener noreferrer"
