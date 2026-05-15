@@ -56,35 +56,26 @@ export default function UpgradePage() {
   const [error, setError] = useState<string | null>(null)
 
   const handleUpgrade = async (planId: string) => {
-    setLoading(planId)
-    setError(null)
-    try {
-      // Kolla om användaren har en kopplad Shopify-store
-      const storeRes = await fetch('/api/stores/current')
-      const storeData = await storeRes.json()
-      const hasShopify = Boolean(storeData?.shop_domain)
-  
-      const endpoint = hasShopify
-        ? '/api/shopify/billing/checkout'
-        : '/api/stripe/checkout'
-  
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: planId }),
-      })
-      const data = await res.json()
-      if (data.url) {
-        window.location.href = data.url
-      } else {
-        setError(data.error || 'Could not start checkout.')
-      }
-    } catch {
-      setError('Something went wrong. Please try again.')
-    } finally {
-      setLoading(null)
+  setLoading(planId)
+  setError(null)
+  try {
+    const res = await fetch('/api/shopify/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: planId }),
+    })
+    const data = await res.json()
+    if (data.url) {
+      window.location.href = data.url
+    } else {
+      setError(data.error || 'No connected Shopify store found. Please connect your store first.')
     }
+  } catch {
+    setError('Something went wrong. Please try again.')
+  } finally {
+    setLoading(null)
   }
+}
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>

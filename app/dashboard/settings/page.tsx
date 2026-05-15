@@ -53,7 +53,6 @@ function SettingsContent() {
   const [mockPriceInput, setMockPriceInput] = useState('')
   const [mockEmailPriceInput, setMockEmailPriceInput] = useState('')
   const [mockLoading, setMockLoading] = useState(false)
-  const [billingLoading, setBillingLoading] = useState(false)
   const [passwordChangeLoading, setPasswordChangeLoading] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -270,25 +269,7 @@ function SettingsContent() {
     window.location.replace('/login')
   }
 
-  const handleOpenBillingPortal = async () => {
-    try {
-      setBillingLoading(true)
-      const res = await fetch('/api/stripe/portal', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) {
-        setMockMessage({ type: 'error', text: data?.error ?? 'Could not open billing portal.' })
-        return
-      }
-
-      if (data.url) {
-        window.location.href = data.url
-      }
-    } catch {
-      setMockMessage({ type: 'error', text: 'Could not open billing portal. Try again.' })
-    } finally {
-      setBillingLoading(false)
-    }
-  }
+  
 
   const primaryStore = stores.find(s => s.is_primary)
   const connectedStores = stores.filter(s => s.shop_domain)
@@ -482,13 +463,19 @@ function SettingsContent() {
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <h2 className="font-bold text-base mb-4">Billing</h2>
-          <button
-            onClick={handleOpenBillingPortal}
-            disabled={billingLoading}
-            className="text-sm font-semibold text-gray-900 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-          >
-            {billingLoading ? 'Opening…' : 'Open billing portal →'}
-          </button>
+          <p className="text-sm text-gray-500 mb-3">
+            Your subscription is managed through your Shopify admin.
+          </p>
+          {primaryStore?.shop_domain && (
+            
+              href={`https://${primaryStore.shop_domain}/admin/charges`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-gray-900 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors inline-block"
+            >
+              Manage billing in Shopify →
+            </a>
+          )}
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
