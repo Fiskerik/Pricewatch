@@ -5,8 +5,7 @@ export interface Store {
   user_id: string
   shop_domain: string | null
   plan: Plan
-  stripe_customer_id: string | null
-  stripe_subscription_id: string | null
+  shopify_charge_id: string | null
   created_at: string
 }
 

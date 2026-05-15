@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 const PLANS = [
   {
@@ -35,7 +36,7 @@ const PLANS = [
 const FAQ = [
   {
     q: 'Can I cancel anytime?',
-    a: 'Yes. Cancel from Settings → Billing portal, effective at end of billing period. No questions asked.',
+    a: 'Yes. Your subscription is managed in Shopify, and any cancellation or plan changes are handled from your Shopify admin.',
   },
   {
     q: 'What happens if I downgrade?',
@@ -43,7 +44,7 @@ const FAQ = [
   },
   {
     q: 'Which payment methods are accepted?',
-    a: 'All major credit and debit cards (Visa, Mastercard, Amex) via Stripe. Secure checkout hosted by Stripe.',
+    a: 'Paid plans are approved through Shopify billing and charged using the payment method associated with your Shopify store.',
   },
   {
     q: 'Is there a free trial?',
@@ -51,31 +52,47 @@ const FAQ = [
   },
 ]
 
-export default function UpgradePage() {
+function UpgradeContent() {
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const handleUpgrade = async (planId: string) => {
-  setLoading(planId)
-  setError(null)
-  try {
-    const res = await fetch('/api/shopify/billing/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: planId }),
-    })
-    const data = await res.json()
-    if (data.url) {
-      window.location.href = data.url
-    } else {
-      setError(data.error || 'No connected Shopify store found. Please connect your store first.')
+  useEffect(() => {
+    const billingError = searchParams?.get('error')
+    if (!billingError) return
+
+    const errorMessages: Record<string, string> = {
+      missing_params: 'Shopify did not return the billing details needed to complete your upgrade.',
+      no_store: 'Connect a Shopify store before upgrading.',
+      charge_declined: 'The Shopify charge was not accepted. Please try again or choose a different plan.',
+      activation_failed: 'Shopify accepted the charge, but activation failed. Please try again.',
+      plan_update_failed: 'Shopify accepted the charge, but we could not update your plan. Contact support so we can fix it.',
     }
-  } catch {
-    setError('Something went wrong. Please try again.')
-  } finally {
-    setLoading(null)
+
+    setError(errorMessages[billingError] ?? 'Shopify billing could not complete your upgrade. Please try again.')
+  }, [searchParams])
+
+  const handleUpgrade = async (planId: string) => {
+    setLoading(planId)
+    setError(null)
+    try {
+      const res = await fetch('/api/shopify/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: planId }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        setError(data.error || 'No connected Shopify store found. Please connect your store first.')
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setLoading(null)
+    }
   }
-}
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -146,5 +163,14 @@ export default function UpgradePage() {
 
       </div>
     </div>
+  )
+}
+
+
+export default function UpgradePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+      <UpgradeContent />
+    </Suspense>
   )
 }

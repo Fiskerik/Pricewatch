@@ -28,13 +28,8 @@ cp .env.local.example .env.local
 3. Scopes: `read_products`
 4. Copy API Key + Secret to `.env.local`
 
-### 5. Set up Stripe
-1. [stripe.com/dashboard](https://dashboard.stripe.com) → Products → Create 2 products:
-   - **Pro**: $15/month recurring → copy Price ID to `STRIPE_PRO_PRICE_ID`
-   - **Business**: $39/month recurring → copy to `STRIPE_BUSINESS_PRICE_ID`
-2. Developers → Webhooks → Add endpoint:
-   - URL: `https://yourapp.vercel.app/api/stripe/webhook`
-   - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
+### 5. Set up Shopify billing
+Paid plans use Shopify recurring application charges. Make sure `NEXT_PUBLIC_APP_URL` points to your app URL so Shopify can return merchants to `/api/shopify/billing/callback` after they approve a charge.
 
 ### 6. Run locally
 ```bash
@@ -55,7 +50,7 @@ vercel
 - **Supabase** — Postgres database + magic link auth
 - **Vercel Cron** — hourly price checks (free)
 - **Resend** — email alerts
-- **Stripe** — subscriptions
+- **Shopify billing** — subscriptions
 - **Cheerio + ScraperAPI** — price scraping
 
 ## File Structure
@@ -73,17 +68,14 @@ app/
       delete/route.ts         Delete competitor URL
     cron/route.ts             Hourly price check job
     shopify/
-      auth/route.ts           Start Shopify OAuth
-      callback/route.ts       Handle OAuth callback + sync
-    stripe/
-      checkout/route.ts       Create Stripe checkout
-      portal/route.ts         Open billing portal
-      webhook/route.ts        Handle Stripe events
+      auth/route.ts             Start Shopify OAuth
+      callback/route.ts         Handle OAuth callback + sync
+      billing/checkout/route.ts Create Shopify recurring charge
+      billing/callback/route.ts Activate approved Shopify charge
 lib/
   supabase.ts                 Supabase clients
   scraper.ts                  Price scraping (Cheerio → ScraperAPI)
   email.ts                    Alert emails (Resend)
-  stripe.ts                   Stripe helpers
   shopify.ts                  Shopify API helpers
 components/
   Sidebar.tsx
