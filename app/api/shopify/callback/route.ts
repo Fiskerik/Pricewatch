@@ -1,215 +1,86 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { supabaseAdmin } from '@/lib/supabase'
-import crypto from 'crypto'
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase";
 
-export const dynamic = 'force-dynamic'
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get("code");
+  const shop = searchParams.get("shop");
+  const host = searchParams.get("host");
 
-const STORE_LIMITS: Record<string, number> = {
-  free: 1,
-  pro: 3,
-  business: 10,
-}
-
-const resolveStoreLimit = (plan: string | null | undefined) => {
-  const normalizedPlan = (plan || 'free').toLowerCase()
-  return {
-    plan: normalizedPlan,
-    limit: STORE_LIMITS[normalizedPlan] ?? STORE_LIMITS.free,
-  }
-}
-
-
-export async function GET(req: NextRequest) {
-  const supabase = createRouteHandlerClient({ cookies })
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.redirect(new URL('/login', req.url))
-
-  const url = new URL(req.url)
-  const code = url.searchParams.get('code')
-  const shop = url.searchParams.get('shop')
-  const state = url.searchParams.get('state')
-  const hmac = url.searchParams.get('hmac')
-
-  // Verify state (CSRF protection)
-  const cookieState = req.cookies.get('shopify_oauth_state')?.value
-  if (state !== cookieState) {
-    return NextResponse.redirect(new URL('/dashboard?error=invalid_state', req.url))
-  }
-
-  // Verify HMAC
-  const params = new URLSearchParams(url.search)
-  params.delete('hmac')
-  const message = params.toString()
-  const hash = crypto
-    .createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
-    .update(message)
-    .digest('hex')
-
-  if (hash !== hmac) {
-    console.log('[shopify/callback] HMAC validation failed', { shop })
-    return NextResponse.redirect(new URL('/dashboard?error=invalid_hmac', req.url))
+  if (!code || !shop) {
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard?error=Missing+parameters`);
   }
 
   try {
-    // 1. Exchange code for access token
+    // Exchange temporary code for access token
     const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
+        client_id: process.env.SHOPIFY_CLIENT_ID,
+        client_secret: process.env.SHOPIFY_CLIENT_SECRET,
         code,
       }),
-    })
+    });
 
-    const { access_token } = await tokenResponse.json()
-    if (!access_token) throw new Error('No access token received')
-
-    // 2. Fetch granted scopes from Shopify
-    let grantedScopes: string | null = null
-    try {
-      const accessInfoRes = await fetch(
-        `https://${shop}/admin/oauth/access_scopes.json`,
-        { headers: { 'X-Shopify-Access-Token': access_token } }
-      )
-      const accessInfo = await accessInfoRes.json()
-      grantedScopes = (accessInfo?.access_scopes ?? [])
-        .map((s: any) => s.handle)
-        .join(',')
-    } catch (scopeErr) {
-      console.warn('[shopify/callback] failed to fetch scopes', String(scopeErr))
+    const tokenData = await tokenResponse.json();
+    if (!tokenResponse.ok) {
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard/connect-shopify?error=OAuth+failed`);
     }
 
-    // 3. Check if store already connected
-    const { data: existingStore } = await supabaseAdmin()
-      .from('stores')
-      .select('id, shopify_scopes')
-      .eq('user_id', user.id)
-      .eq('shop_domain', shop)
-      .single()
+    const accessToken = tokenData.access_token;
+    const supabase = createClient();
 
-    const { data: userStores, error: userStoresError } = await supabaseAdmin()
-      .from('stores')
-      .select('id, plan, shop_domain, is_primary')
-      .eq('user_id', user.id)
+    // Fetch shop details to get latest store info if needed
+    const shopResponse = await fetch(`https://${shop}/admin/api/2024-04/shop.json`, {
+      headers: { "X-Shopify-Access-Token": accessToken },
+    });
+    const shopData = await shopResponse.json();
+    const shopInfo = shopData?.shop || {};
 
-    if (userStoresError) {
-      throw new Error(`Failed to fetch stores for limit validation: ${userStoresError.message}`)
+    // Check if this shop domain is ALREADY connected to an existing account
+    const { data: existingStore } = await supabase
+      .from("stores")
+      .select("user_id")
+      .eq("myshopify_domain", shop)
+      .maybeSingle();
+
+    if (existingStore) {
+      // Look up the profile/auth email belonging to the connected user_id
+      const { data: userData } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("id", existingStore.user_id)
+        .maybeSingle();
+
+      // Fallback to checking auth side if profiles table email is empty
+      const targetEmail = userData?.email || "another user account";
+
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/connect-shopify?error=${encodeURIComponent(
+          `Shopify already connected to email ${targetEmail}`
+        )}`
+      );
     }
 
-    const normalizedUserStores = userStores || []
-    const primaryStoreForPlan = normalizedUserStores.find((store: any) => store.is_primary) ?? normalizedUserStores[0]
-    const { plan, limit } = resolveStoreLimit(primaryStoreForPlan?.plan)
-    const connectedStoresCount = normalizedUserStores.filter((store: any) => store.shop_domain).length
-    const reusableDisconnectedStore = normalizedUserStores.find((store: any) => !store.shop_domain)
-
-    console.log('[shopify/callback] validating store limit', {
-      userId: user.id,
-      plan,
-      limit,
-      connectedStoresCount,
-      targetShop: shop,
-      hasExistingStore: Boolean(existingStore),
-      reusableDisconnectedStoreId: reusableDisconnectedStore?.id ?? null,
-    })
-
-    if (!existingStore && !reusableDisconnectedStore && connectedStoresCount >= limit) {
-      return NextResponse.redirect(new URL(`/dashboard/settings?error=store_limit&plan=${plan}&limit=${limit}`, req.url))
+    // Get current authenticated user session trying to connect the store
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/login?error=Unauthorized`);
     }
 
-    let store
+    // Persist new Shopify integration
+    await supabase.from("stores").insert({
+      user_id: session.user.id,
+      myshopify_domain: shop,
+      access_token: accessToken,
+      shop_name: shopInfo.name || shop,
+      currency: shopInfo.currency || "USD",
+    });
 
-    if (existingStore || reusableDisconnectedStore) {
-      const storeToUpdate = existingStore?.id ?? reusableDisconnectedStore?.id
-      const { data: updatedStore, error: updateError } = await supabaseAdmin()
-        .from('stores')
-        .update({
-          shop_domain: shop,
-          access_token,
-          shopify_scopes: grantedScopes && grantedScopes.length > 0
-            ? grantedScopes
-            : (existingStore?.shopify_scopes ?? 'read_products,write_products'),
-          store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
-        })
-        .eq('id', storeToUpdate)
-        .select()
-        .single()
-
-      if (updateError) {
-        console.error('[shopify/callback] failed to update existing or reusable store', {
-          shop,
-          storeId: storeToUpdate,
-          message: updateError.message,
-        })
-        throw new Error('Failed to update store')
-      }
-      store = updatedStore
-    } else {
-      const isFirstStore = normalizedUserStores.length === 0
-
-      const { data: newStore, error: insertError } = await supabaseAdmin()
-        .from('stores')
-        .insert({
-          user_id: user.id,
-          shop_domain: shop,
-          access_token,
-          shopify_scopes: grantedScopes && grantedScopes.length > 0 ? grantedScopes : 'read_products,write_products',
-          store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
-          is_primary: isFirstStore,
-          plan,
-        })
-        .select()
-        .single()
-
-      if (insertError) {
-        console.error('[shopify/callback] failed to create store', {
-          shop,
-          userId: user.id,
-          message: insertError.message,
-        })
-        throw new Error('Failed to create store')
-      }
-      store = newStore
-    }
-
-    // 4. Fetch and sync products
-    const productsResponse = await fetch(
-      `https://${shop}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images,variants`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': access_token,
-          'Content-Type': 'application/json',
-        },
-      }
-    )
-
-    const { products } = await productsResponse.json()
-
-    for (const product of products || []) {
-      const mainVariant = product.variants?.[0]
-      await supabaseAdmin()
-        .from('products')
-        .upsert({
-          store_id: store.id,
-          shopify_product_id: String(product.id),
-          shopify_variant_id: String(mainVariant?.id ?? ''),
-          title: product.title,
-          handle: product.handle,
-          image_url: product.images?.[0]?.src ?? null,
-          our_price: mainVariant?.price ? parseFloat(mainVariant.price) : null,
-          currency_code: 'USD',
-        }, {
-          onConflict: 'shopify_product_id,store_id',
-        })
-    }
-
-    const response = NextResponse.redirect(new URL('/dashboard/settings?connected=true', req.url))
-    response.cookies.delete('shopify_oauth_state')
-    return response
-  } catch (err) {
-    console.error('Shopify callback error:', err)
-    return NextResponse.redirect(new URL('/dashboard/settings?error=shopify', req.url))
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard?success=connected`);
+  } catch (error) {
+    console.error("Shopify callback OAuth error:", error);
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard/connect-shopify?error=Something+went+wrong`);
   }
 }
