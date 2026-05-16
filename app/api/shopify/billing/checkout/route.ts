@@ -51,7 +51,8 @@ export async function POST(req: NextRequest) {
 
   const selectedPlan = SHOPIFY_PLANS[plan]
   const returnUrl = `${getAppUrl(req)}/api/shopify/billing/callback?plan=${encodeURIComponent(plan)}`
-
+console.log('Creating charge for shop:', store.shop_domain);
+console.log('Access token exists:', !!store.access_token);
   const res = await fetch(
     `https://${store.shop_domain}/admin/api/${SHOPIFY_API_VERSION}/recurring_application_charges.json`,
     {
