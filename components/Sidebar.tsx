@@ -105,7 +105,61 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
     <div className="text-[11px] text-purple-700 font-semibold">Need unlimited limits? Go Business.</div>
     <UpgradeButton plan="business" label="Upgrade to Business →" primary />
   </div>
-)}
+)
+// Add this inside the Sidebar component, before the return statement
+const UpgradeButton = ({ plan, label, primary = false }: { 
+  plan: 'pro' | 'business'; 
+  label: string; 
+  primary?: boolean 
+}) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleUpgrade = async () => {
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/shopify/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.error?.toLowerCase().includes('connect a shopify store')) {
+          window.location.href = '/dashboard/connect-shopify';
+          return;
+        }
+        alert(data.error || 'Something went wrong');
+        return;
+      }
+
+      // Go directly to Shopify
+      window.location.href = data.url;
+    } catch (err) {
+      console.error(err);
+      alert('Failed to start upgrade. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleUpgrade}
+      disabled={loading}
+      className={`block w-full text-center text-xs font-bold py-2 rounded-lg transition-colors ${
+        primary 
+          ? 'bg-purple-600 text-white hover:bg-purple-700' 
+          : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-100'
+      }`}
+    >
+      {loading ? 'Redirecting...' : label}
+    </button>
+  );
+};
+          }
         </div>
       </div>
 
