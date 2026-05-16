@@ -37,6 +37,63 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
 
   const usagePct = planLimit === Infinity ? 0 : (productCount / planLimit) * 100
 
+  // Inner Upgrade Button Component
+  const UpgradeButton = ({ 
+    plan: upgradePlan, 
+    label, 
+    primary = false 
+  }: { 
+    plan: 'pro' | 'business'
+    label: string
+    primary?: boolean 
+  }) => {
+    const [loading, setLoading] = useState(false)
+
+    const handleUpgrade = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch('/api/shopify/billing/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan: upgradePlan }),
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          if (data.error?.toLowerCase().includes('connect a shopify store')) {
+            window.location.href = '/dashboard/connect-shopify'
+            return
+          }
+          alert(data.error || 'Something went wrong')
+          return
+        }
+
+        // Go directly to Shopify approval page
+        window.location.href = data.url
+      } catch (err) {
+        console.error(err)
+        alert('Failed to start upgrade. Please try again.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    return (
+      <button
+        onClick={handleUpgrade}
+        disabled={loading}
+        className={`block w-full text-center text-xs font-bold py-2 rounded-lg transition-colors ${
+          primary
+            ? 'bg-purple-600 text-white hover:bg-purple-700'
+            : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-100'
+        }`}
+      >
+        {loading ? 'Redirecting...' : label}
+      </button>
+    )
+  }
+
   const SidebarInner = (
     <div className="flex flex-col h-full">
       <div className="px-5 pb-5 border-b border-gray-100">
@@ -82,6 +139,7 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
           <div className="flex justify-between items-center mb-1">
             <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">{plan} Plan</span>
           </div>
+
           {planLimit !== Infinity && (
             <>
               <div className="text-xs text-gray-500 mb-2">{productCount} / {planLimit} products</div>
@@ -90,76 +148,23 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
               </div>
             </>
           )}
+
           {plan === 'free' && (
-  <div className="space-y-2">
-    <div className="text-[11px] text-purple-700 font-semibold">Unlock more tracking with Pro or Business.</div>
-    <div className="flex flex-col gap-1.5">
-      <UpgradeButton plan="pro" label="Upgrade to Pro" primary />
-      <UpgradeButton plan="business" label="Upgrade to Business" />
-    </div>
-  </div>
-)}
+            <div className="space-y-2">
+              <div className="text-[11px] text-purple-700 font-semibold">Unlock more tracking with Pro or Business.</div>
+              <div className="flex flex-col gap-1.5">
+                <UpgradeButton plan="pro" label="Upgrade to Pro" primary />
+                <UpgradeButton plan="business" label="Upgrade to Business" />
+              </div>
+            </div>
+          )}
 
-{plan === 'pro' && (
-  <div className="space-y-2">
-    <div className="text-[11px] text-purple-700 font-semibold">Need unlimited limits? Go Business.</div>
-    <UpgradeButton plan="business" label="Upgrade to Business →" primary />
-  </div>
-)
-// Add this inside the Sidebar component, before the return statement
-const UpgradeButton = ({ plan, label, primary = false }: { 
-  plan: 'pro' | 'business'; 
-  label: string; 
-  primary?: boolean 
-}) => {
-  const [loading, setLoading] = useState(false);
-
-  const handleUpgrade = async () => {
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/shopify/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.error?.toLowerCase().includes('connect a shopify store')) {
-          window.location.href = '/dashboard/connect-shopify';
-          return;
-        }
-        alert(data.error || 'Something went wrong');
-        return;
-      }
-
-      // Go directly to Shopify
-      window.location.href = data.url;
-    } catch (err) {
-      console.error(err);
-      alert('Failed to start upgrade. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleUpgrade}
-      disabled={loading}
-      className={`block w-full text-center text-xs font-bold py-2 rounded-lg transition-colors ${
-        primary 
-          ? 'bg-purple-600 text-white hover:bg-purple-700' 
-          : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-100'
-      }`}
-    >
-      {loading ? 'Redirecting...' : label}
-    </button>
-  );
-};
-          }
+          {plan === 'pro' && (
+            <div className="space-y-2">
+              <div className="text-[11px] text-purple-700 font-semibold">Need unlimited limits? Go Business.</div>
+              <UpgradeButton plan="business" label="Upgrade to Business →" primary />
+            </div>
+          )}
         </div>
       </div>
 
