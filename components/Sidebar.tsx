@@ -91,38 +91,21 @@ export default function Sidebar({ user, store, plan, productCount, planLimit }: 
             </>
           )}
           {plan === 'free' && (
-            <div className="space-y-2">
-              <div className="text-[11px] text-purple-700 font-semibold">Unlock more tracking with Pro or Business.</div>
-              <div className="flex flex-col gap-1.5">
-                <Link
-                  href="/dashboard/upgrade"
-                  className="block w-full text-center bg-purple-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-purple-700 transition-colors"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Upgrade to Pro
-                </Link>
-                <Link
-                  href="/dashboard/upgrade"
-                  className="block w-full text-center bg-white text-purple-700 text-xs font-bold py-2 rounded-lg border border-purple-300 hover:bg-purple-100 transition-colors"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Upgrade to Business
-                </Link>
-              </div>
-            </div>
-          )}
-          {plan === 'pro' && (
-            <div className="space-y-2">
-              <div className="text-[11px] text-purple-700 font-semibold">Need unlimited limits? Go Business.</div>
-              <Link
-                href="/dashboard/upgrade"
-                className="block w-full text-center bg-purple-600 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-purple-700 transition-colors"
-                onClick={() => setMobileOpen(false)}
-              >
-                Upgrade to Business →
-              </Link>
-            </div>
-          )}
+  <div className="space-y-2">
+    <div className="text-[11px] text-purple-700 font-semibold">Unlock more tracking with Pro or Business.</div>
+    <div className="flex flex-col gap-1.5">
+      <UpgradeButton plan="pro" label="Upgrade to Pro" primary />
+      <UpgradeButton plan="business" label="Upgrade to Business" />
+    </div>
+  </div>
+)}
+
+{plan === 'pro' && (
+  <div className="space-y-2">
+    <div className="text-[11px] text-purple-700 font-semibold">Need unlimited limits? Go Business.</div>
+    <UpgradeButton plan="business" label="Upgrade to Business →" primary />
+  </div>
+)}
         </div>
       </div>
 
