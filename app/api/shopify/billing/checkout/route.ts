@@ -75,15 +75,26 @@ export async function POST(req: NextRequest) {
   const data = await res.json().catch(() => ({}))
   const charge = data.recurring_application_charge
 
-  if (!res.ok || !charge?.confirmation_url) {
-    console.log('[shopify billing checkout] failed to create charge', {
-      shopDomain: store.shop_domain,
-      plan,
-      status: res.status,
-      errors: data?.errors,
-    })
-    return NextResponse.json({ error: 'Failed to create Shopify charge. Please try again from your Shopify-connected account.' }, { status: 500 })
+if (!res.ok || !charge?.confirmation_url) {
+  console.error('[shopify billing checkout] failed to create charge', {
+    shopDomain: store.shop_domain,
+    plan,
+    status: res.status,
+    statusText: res.statusText,
+    errors: data?.errors || data,
+    body: data
+  });
+
+  let userError = 'Failed to create Shopify charge. Please try again.';
+
+  if (data?.errors) {
+    if (data.errors.some((e: any) => e.code === 'forbidden' || String(e).includes('billing'))) {
+      userError = 'Missing billing permission. Please reconnect your store in Settings.';
+    }
   }
+
+  return NextResponse.json({ error: userError }, { status: 500 });
+}
 
   return NextResponse.json({ url: charge.confirmation_url })
 }
