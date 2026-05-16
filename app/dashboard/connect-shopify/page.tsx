@@ -9,7 +9,18 @@ function ConnectShopifyContent() {
   
   const searchParams = useSearchParams()
   const errorParam = searchParams.get('error')
-  const errorMessage = errorParam ? decodeURIComponent(errorParam) : null
+  
+  let errorMessage: string | null = null
+  if (errorParam) {
+    const decoded = decodeURIComponent(errorParam)
+    if (decoded.includes('already connected to email')) {
+      errorMessage = decoded // e.g. "Shopify already connected to email john@example.com"
+    } else if (decoded === 'shopify') {
+      errorMessage = 'Something went wrong with Shopify. Please try again.'
+    } else {
+      errorMessage = decoded
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -17,7 +28,6 @@ function ConnectShopifyContent() {
 
     setLoading(true)
 
-    // Clean shop name (handle full URLs)
     let cleanShop = shop
       .replace(/^https?:\/\//, '')
       .replace(/\/$/, '')
@@ -27,7 +37,6 @@ function ConnectShopifyContent() {
       cleanShop = `${cleanShop}.myshopify.com`
     }
 
-    // Redirect to the install API route
     window.location.href = `/api/shopify/install?shop=${encodeURIComponent(cleanShop)}`
   }
 
@@ -36,8 +45,8 @@ function ConnectShopifyContent() {
       <h1 className="text-xl font-bold mb-4">Connect Shopify Store</h1>
       
       {errorMessage && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-md font-medium">
-          {errorMessage === 'shopify' ? 'Something went wrong' : errorMessage}
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-md">
+          {errorMessage}
         </div>
       )}
 
@@ -60,7 +69,7 @@ function ConnectShopifyContent() {
           disabled={loading}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-md disabled:opacity-50"
         >
-          {loading ? 'Connecting...' : 'Connect'}
+          {loading ? 'Connecting...' : 'Connect Store'}
         </button>
       </form>
     </div>
@@ -69,7 +78,7 @@ function ConnectShopifyContent() {
 
 export default function ConnectShopify() {
   return (
-    <Suspense fallback={<div className="max-w-md mx-auto mt-12 p-6 text-center text-gray-500">Loading screen...</div>}>
+    <Suspense fallback={<div className="max-w-md mx-auto mt-12 p-6 text-center">Loading...</div>}>
       <ConnectShopifyContent />
     </Suspense>
   )
