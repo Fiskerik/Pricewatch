@@ -1,101 +1,75 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server';
+import { createShopifyAdminClient } from '@/lib/shopify'; // your existing helper
 
-export const dynamic = 'force-dynamic'
+export async function POST(request: Request) {
+  const { plan } = await request.json();
 
-const SHOPIFY_API_VERSION = '2026-01'
-const SHOPIFY_PLANS = {
-  pro: { name: 'Pricingspy Pro', price: 15.00, trialDays: 0 },
-  business: { name: 'Pricingspy Business', price: 39.00, trialDays: 0 },
-} as const
+  // Get the current user's connected store
+  // ... (keep your existing Supabase logic to fetch the store)
 
-type ShopifyPlan = keyof typeof SHOPIFY_PLANS
-
-function isShopifyPlan(plan: unknown): plan is ShopifyPlan {
-  return plan === 'pro' || plan === 'business'
-}
-
-function getAppUrl(req: NextRequest) {
-  return (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
-}
-
-export async function POST(req: NextRequest) {
-  const supabase = createRouteHandlerClient({ cookies })
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { plan } = await req.json()
-  if (!isShopifyPlan(plan)) {
-    return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
-  }
-
-  const { data: store, error: storeError } = await supabase
+  const { data: store } = await supabaseAdmin()
     .from('stores')
-    .select('shop_domain, access_token')
+    .select('*')
     .eq('user_id', user.id)
-    .not('shop_domain', 'is', null)
-    .order('is_primary', { ascending: false })
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
+    .single();
 
-  if (storeError) {
-    console.log('[shopify billing checkout] failed to load store', { userId: user.id, error: storeError.message })
-    return NextResponse.json({ error: 'Could not load your connected Shopify store.' }, { status: 500 })
+  if (!store?.access_token || !store.shop_domain) {
+    return NextResponse.json({ error: 'Please connect a Shopify store first' }, { status: 400 });
   }
 
-  if (!store?.shop_domain || !store?.access_token) {
-    return NextResponse.json({ error: 'Connect a Shopify store before upgrading.' }, { status: 400 })
-  }
+  const shopify = createShopifyAdminClient(store.shop_domain, store.access_token);
 
-  const selectedPlan = SHOPIFY_PLANS[plan]
-  const returnUrl = `${getAppUrl(req)}/api/shopify/billing/callback?plan=${encodeURIComponent(plan)}`
-console.log('Creating charge for shop:', store.shop_domain);
-console.log('Access token exists:', !!store.access_token);
-  const res = await fetch(
-    `https://${store.shop_domain}/admin/api/${SHOPIFY_API_VERSION}/recurring_application_charges.json`,
-    {
-      method: 'POST',
-      headers: {
-        'X-Shopify-Access-Token': store.access_token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        recurring_application_charge: {
-          name: selectedPlan.name,
-          price: selectedPlan.price,
-          return_url: returnUrl,
-          trial_days: selectedPlan.trialDays,
-          test: process.env.NODE_ENV !== 'production',
-        },
-      }),
+  const price = plan === 'business' ? '39' : '15';
+  const planName = plan === 'business' ? 'Business Plan' : 'Pro Plan';
+
+  try {
+    const response = await shopify.graphql(`
+      mutation appSubscriptionCreate($name: String!, $returnUrl: URL!, $price: Decimal!) {
+        appSubscriptionCreate(
+          name: $name
+          returnUrl: $returnUrl
+          test: true  # Set to false in production
+          lineItems: [{
+            plan: {
+              appRecurringPricingDetails: {
+                price: { amount: $price, interval: EVERY_30_DAYS }
+              }
+            }
+          }]
+        ) {
+          userErrors {
+            field
+            message
+          }
+          confirmationUrl
+          appSubscription {
+            id
+          }
+        }
+      }
+    `, {
+      name: planName,
+      returnUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/shopify/billing/callback`,
+      price: price,
+    });
+
+    const { data } = response;
+
+    if (data.appSubscriptionCreate.userErrors?.length > 0) {
+      console.error(data.appSubscriptionCreate.userErrors);
+      return NextResponse.json({ 
+        error: data.appSubscriptionCreate.userErrors[0].message 
+      }, { status: 400 });
     }
-  )
 
-  const data = await res.json().catch(() => ({}))
-  const charge = data.recurring_application_charge
+    return NextResponse.json({ 
+      url: data.appSubscriptionCreate.confirmationUrl 
+    });
 
-if (!res.ok || !charge?.confirmation_url) {
-  console.error('[shopify billing checkout] failed to create charge', {
-    shopDomain: store.shop_domain,
-    plan,
-    status: res.status,
-    statusText: res.statusText,
-    errors: data?.errors || data,
-    body: data
-  });
-
-  let userError = 'Failed to create Shopify charge. Please try again.';
-
-  if (data?.errors) {
-    if (data.errors.some((e: any) => e.code === 'forbidden' || String(e).includes('billing'))) {
-      userError = 'Missing billing permission. Please reconnect your store in Settings.';
-    }
+  } catch (error: any) {
+    console.error('[Shopify Billing] Error:', error);
+    return NextResponse.json({ 
+      error: 'Failed to create Shopify charge. Please try again.' 
+    }, { status: 500 });
   }
-
-  return NextResponse.json({ error: userError }, { status: 500 });
-}
-
-  return NextResponse.json({ url: charge.confirmation_url })
 }
