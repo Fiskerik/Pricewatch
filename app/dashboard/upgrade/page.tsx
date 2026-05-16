@@ -1,81 +1,77 @@
-"use client"
+"use client";
 
-import { useState } from 'react"
+import { useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
 
-export default function UpgradePage() {
-  const [loading, setLoading] = useState<string | null>(null)
+function ConnectShopifyContent() {
+  const searchParams = useSearchParams();
+  const rawError = searchParams.get("error");
+  const [shopDomain, setShopDomain] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleUpgrade = async (planName: string, price: number) => {
-    setLoading(planName)
+  // If error query parameter exists, check if it's our custom duplicate error message or format nicely
+  const errorMessage = rawError ? decodeURIComponent(rawError) : null;
+
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shopDomain) return;
+
+    setLoading(true);
     try {
-      const res = await fetch('/api/shopify/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planName: planName,
-          price: price,
-          isTest: process.env.NODE_ENV !== 'production'
-        }),
-      })
-
-      const data = await res.json()
-      if (data.url) {
-        // Break out of framing contexts safely to allow Shopify external billing approval pages to load
-        if (typeof window !== 'undefined') {
-          if (window.top) {
-            window.top.location.href = data.url
-          } else {
-            window.location.href = data.url
-          }
-        }
-      } else {
-        alert(data.error || 'Something went wrong')
+      // Clean up inputs if users copy-paste full URLs
+      let formattedDomain = shopDomain.replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0];
+      if (!formattedDomain.endsWith(".myshopify.com")) {
+        formattedDomain = `${formattedDomain}.myshopify.com`;
       }
+
+      // Route user to your api initiate endpoint
+      window.location.href = `/api/shopify/install?shop=${encodeURIComponent(formattedDomain)}`;
     } catch (err) {
-      alert('Failed to initiate checkout link.')
-    } finally {
-      setLoading(null)
+      setLoading(false);
+      alert("Could not initialize setup link.");
     }
-  }
+  };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-2">Upgrade Subscription</h1>
-      <p className="text-gray-600 mb-8">Choose a plan to increase your store tracking capabilities.</p>
+    <div className="p-8 max-w-md mx-auto bg-white rounded-xl shadow-md border border-gray-100 mt-12">
+      <h1 className="text-xl font-bold mb-2">Connect your Shopify Store</h1>
+      <p className="text-sm text-gray-500 mb-6">Enter your Shopify store URL domain to link product inventory.</p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Pro Plan Box */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white shadow-sm flex flex-col justify-between">
-          <div>
-            <h2 className="text-xl font-semibold mb-2">Pro</h2>
-            <p className="text-gray-500 text-sm mb-4">Track up to 3 connected stores.</p>
-            <div className="text-3xl font-bold mb-6">$19<span className="text-sm font-normal text-gray-500">/mo</span></div>
-          </div>
-          <button
-            onClick={() => handleUpgrade('Pro', 19.00)}
-            disabled={loading !== null}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition disabled:opacity-50"
-          >
-            {loading === 'Pro' ? 'Processing...' : 'Upgrade to Pro'}
-          </button>
+      {errorMessage && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg font-medium">
+          {errorMessage}
+        </div>
+      )}
+
+      <form onSubmit={handleConnect} className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold uppercase text-gray-600 mb-1">Store Domain</label>
+          <input
+            type="text"
+            placeholder="my-store.myshopify.com"
+            value={shopDomain}
+            onChange={(e) => setShopDomain(e.target.value)}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
+          />
         </div>
 
-        {/* Business Plan Box */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white shadow-sm flex flex-col justify-between">
-          <div>
-            <h2 className="text-xl font-semibold mb-2">Business</h2>
-            <p className="text-gray-500 text-sm mb-4">Track up to 10 connected stores.</p>
-            <div className="text-3xl font-bold mb-6">$49<span className="text-sm font-normal text-gray-500">/mo</span></div>
-          </div>
-          <button
-            onClick={() => handleUpgrade('Business', 49.00)}
-            disabled={loading !== null}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition disabled:opacity-50"
-          >
-            {loading === 'Business' ? 'Processing...' : 'Upgrade to Business'}
-          </button>
-        </div>
-      </div>
+        <button
+          type="submit"
+          disabled={loading || !shopDomain}
+          className="w-full bg-black hover:bg-gray-800 text-white font-medium py-2 rounded text-sm transition disabled:opacity-50"
+        >
+          {loading ? "Connecting..." : "Link Shopify Store"}
+        </button>
+      </form>
     </div>
-  )
+  );
+}
+
+export default function ConnectShopifyPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-sm text-gray-500">Loading component...</div>}>
+      <ConnectShopifyContent />
+    </Suspense>
+  );
 }
