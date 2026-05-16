@@ -4,11 +4,19 @@ import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
-const SHOPIFY_API_VERSION = '2025-07' // or 2026-01
+const SHOPIFY_API_VERSION = '2025-07'
 
 const SHOPIFY_PLANS = {
-  pro: { name: 'Pricingspy Pro', price: '15.00', trialDays: 0 },
-  business: { name: 'Pricingspy Business', price: '39.00', trialDays: 0 },
+  pro: { 
+    name: 'Pricingspy Pro', 
+    price: '15.00', 
+    currencyCode: 'USD' 
+  },
+  business: { 
+    name: 'Pricingspy Business', 
+    price: '39.00', 
+    currencyCode: 'USD' 
+  },
 } as const
 
 type ShopifyPlan = keyof typeof SHOPIFY_PLANS
@@ -64,8 +72,7 @@ export async function POST(req: NextRequest) {
   const selectedPlan = SHOPIFY_PLANS[plan]
   const returnUrl = `${getAppUrl(req)}/api/shopify/billing/callback?plan=${encodeURIComponent(plan)}`
 
-  console.log('Creating subscription for shop:', store.shop_domain)
-  console.log('Plan:', plan)
+  console.log('Creating subscription for shop:', store.shop_domain, 'Plan:', plan)
 
   try {
     const response = await fetch(
@@ -81,7 +88,8 @@ export async function POST(req: NextRequest) {
             mutation appSubscriptionCreate(
               $name: String!,
               $returnUrl: URL!,
-              $price: Decimal!
+              $price: Decimal!,
+              $currencyCode: CurrencyCode!
             ) {
               appSubscriptionCreate(
                 name: $name
@@ -90,7 +98,11 @@ export async function POST(req: NextRequest) {
                 lineItems: [{
                   plan: {
                     appRecurringPricingDetails: {
-                      price: { amount: $price, interval: EVERY_30_DAYS }
+                      price: { 
+                        amount: $price, 
+                        currencyCode: $currencyCode 
+                      }
+                      interval: EVERY_30_DAYS
                     }
                   }
                 }]
@@ -110,6 +122,7 @@ export async function POST(req: NextRequest) {
             name: selectedPlan.name,
             returnUrl: returnUrl,
             price: selectedPlan.price,
+            currencyCode: selectedPlan.currencyCode,
           },
         }),
       }
@@ -118,7 +131,7 @@ export async function POST(req: NextRequest) {
     const result = await response.json()
 
     if (!response.ok || result.errors) {
-      console.error('[Shopify Billing] GraphQL Error:', result)
+      console.error('[Shopify Billing] GraphQL Error:', JSON.stringify(result, null, 2))
       return NextResponse.json({ 
         error: result.errors?.[0]?.message || 'Failed to create subscription' 
       }, { status: 500 })
