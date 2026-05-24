@@ -20,7 +20,7 @@ export default async function DashboardPage() {
   if (!store) {
     const { data: newStore } = await supabase
       .from('stores')
-      .insert({ user_id: user.id, plan: isTestUserEmail(user.email) ? 'pro' : 'free' })
+      .insert({ user_id: user.id, plan: isTestUserEmail(user.email) ? 'pro' : 'free', email: user.email })
       .select()
       .single()
     store = newStore
