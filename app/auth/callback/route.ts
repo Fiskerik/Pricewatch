@@ -23,3 +23,9 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.redirect(new URL('/dashboard', req.url))
 }
+await supabase
+  .from('stores')
+  .upsert(
+    { user_id: user.id, plan: isTestUser ? 'pro' : 'free', email: user.email },
+    { onConflict: 'user_id' }
+  )
