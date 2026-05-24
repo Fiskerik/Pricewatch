@@ -185,6 +185,7 @@ export async function GET(req: NextRequest) {
           store_name: shop?.replace('.myshopify.com', '') || 'Shopify Store',
           is_primary: isFirstStore,
           plan,
+          email: user.email, 
         })
         .select()
         .single()
